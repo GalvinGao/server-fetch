@@ -37,5 +37,6 @@ jobs:
         run: pnpm build
 
       - name: publish
-        # --no-git-checks: tag checkout is detached HEAD, which pnpm rejects otherwise
-        run: pnpm publish --access public --provenance --no-git-checks
+        # Use npm directly — pnpm delegates to npm but can interfere with OIDC auth.
+        # --provenance: signs with Sigstore via GitHub OIDC (trusted publisher).
+        run: npm publish --access public --provenance

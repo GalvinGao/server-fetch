@@ -1,6 +1,6 @@
 {
   "name": "server-fetch",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "SSRF-safe fetch() for server-side use — validates IPs, enforces scheme/port, eliminates DNS rebinding via undici connect.lookup",
   "keywords": [
     "dns-rebinding",
