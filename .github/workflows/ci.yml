@@ -28,4 +28,15 @@ jobs:
         run: pnpm fmt:check
 
       - name: tests
-        run: pnpm vitest run --coverage
+        run: pnpm vitest run --coverage 2>&1 | tee test-output.txt
+
+      - name: coverage summary
+        if: always()
+        run: |
+          {
+            echo '### Coverage'
+            echo ''
+            echo '```'
+            sed -n '/% Coverage report/,/===$/p' test-output.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
