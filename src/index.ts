@@ -170,5 +170,3 @@ export async function serverFetch(
     clearTimeout(timeoutId)
   }
 }
-
-export default serverFetch

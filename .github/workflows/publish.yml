@@ -37,4 +37,5 @@ jobs:
         run: pnpm build
 
       - name: publish
-        run: pnpm publish --access public --provenance
+        # --no-git-checks: tag checkout is detached HEAD, which pnpm rejects otherwise
+        run: pnpm publish --access public --provenance --no-git-checks
