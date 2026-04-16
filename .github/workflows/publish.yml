@@ -37,6 +37,9 @@ jobs:
         run: pnpm build
 
       - name: publish
-        # Use npm directly — pnpm delegates to npm but can interfere with OIDC auth.
         # --provenance: signs with Sigstore via GitHub OIDC (trusted publisher).
+        # NODE_AUTH_TOKEN must be empty so npm uses OIDC instead of the
+        # default GITHUB_TOKEN that actions/setup-node writes to .npmrc.
         run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ''
