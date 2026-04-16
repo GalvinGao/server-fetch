@@ -1,13 +1,28 @@
 {
   "name": "server-fetch",
   "version": "1.0.0",
-  "keywords": [],
+  "description": "SSRF-safe fetch() for server-side use — validates IPs, enforces scheme/port, eliminates DNS rebinding via undici connect.lookup",
+  "keywords": [
+    "dns-rebinding",
+    "fetch",
+    "security",
+    "server-side",
+    "ssrf",
+    "undici"
+  ],
+  "homepage": "https://github.com/GalvinGao/server-fetch#readme",
+  "bugs": "https://github.com/GalvinGao/server-fetch/issues",
   "license": "MIT",
   "author": "GalvinGao",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/GalvinGao/server-fetch.git"
+  },
   "files": [
     "dist"
   ],
   "type": "module",
+  "sideEffects": false,
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
@@ -44,6 +59,9 @@
   },
   "peerDependencies": {
     "undici": "^8.1.0"
+  },
+  "engines": {
+    "node": ">=20.18.1"
   },
   "packageManager": "pnpm@9.12.3+sha512.cce0f9de9c5a7c95bef944169cc5dfe8741abfb145078c0d508b868056848a87c81e626246cb60967cbd7fd29a6c062ef73ff840d96b3c86c40ac92cf4a813ee"
 }
