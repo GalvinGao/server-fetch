@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Agent } from 'undici'
 import {
   DEFAULT_MAX_RESPONSE_SIZE,
+  ResponseExceededMaxSizeError,
   SsrfError,
   createSsrfSafeAgent,
   serverFetch,
@@ -45,6 +46,13 @@ describe('SsrfError', () => {
 describe('DEFAULT_MAX_RESPONSE_SIZE', () => {
   it('is 10MB', () => {
     expect(DEFAULT_MAX_RESPONSE_SIZE).toBe(10 * 1024 * 1024)
+  })
+})
+
+describe('ResponseExceededMaxSizeError', () => {
+  it('is re-exported from undici', () => {
+    expect(ResponseExceededMaxSizeError).toBeDefined()
+    expect(ResponseExceededMaxSizeError.name).toBe('ResponseExceededMaxSizeError')
   })
 })
 
