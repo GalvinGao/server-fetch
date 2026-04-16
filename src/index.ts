@@ -187,7 +187,8 @@ export async function serverFetch(
 
     if (maxResponseSize !== Infinity) {
       const contentLength = response.headers.get('content-length')
-      if (contentLength && parseInt(contentLength, 10) > maxResponseSize) {
+      const size = Number(contentLength)
+      if (contentLength && Number.isFinite(size) && size > maxResponseSize) {
         await response.body?.cancel()
         throw new SsrfError(
           'RESPONSE_TOO_LARGE',
@@ -200,5 +201,8 @@ export async function serverFetch(
     return response
   } finally {
     clearTimeout(timeoutId)
+    if (dispatcher !== ssrfSafeAgent) {
+      void dispatcher.close()
+    }
   }
 }

@@ -1,5 +1,5 @@
 import dns from 'node:dns'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Agent } from 'undici'
 import {
   DEFAULT_MAX_RESPONSE_SIZE,
@@ -25,6 +25,10 @@ vi.mock('undici', async (importOriginal) => {
       return actual.fetch(...args)
     },
   }
+})
+
+afterEach(() => {
+  mockFetchResponse.value = null
 })
 
 describe('SsrfError', () => {
@@ -242,9 +246,10 @@ describe('serverFetch', () => {
 
   it('rejects when Content-Length exceeds default maxResponseSize', async () => {
     const hugeContentLength = (DEFAULT_MAX_RESPONSE_SIZE + 1).toString()
+    const cancelFn = vi.fn()
     mockFetchResponse.value = {
       headers: new Headers({ 'content-length': hugeContentLength }),
-      body: { cancel: vi.fn() },
+      body: { cancel: cancelFn },
     }
 
     const err = await serverFetch('https://example.com', { timeout: 2000 }).catch((e) => e)
@@ -252,12 +257,14 @@ describe('serverFetch', () => {
     expect(err).toBeInstanceOf(SsrfError)
     expect(err.code).toBe('RESPONSE_TOO_LARGE')
     expect(err.message).toContain(hugeContentLength)
+    expect(cancelFn).toHaveBeenCalledOnce()
   })
 
   it('rejects when Content-Length exceeds custom maxResponseSize', async () => {
+    const cancelFn = vi.fn()
     mockFetchResponse.value = {
       headers: new Headers({ 'content-length': '2000' }),
-      body: { cancel: vi.fn() },
+      body: { cancel: cancelFn },
     }
 
     const err = await serverFetch('https://example.com', {
@@ -267,10 +274,17 @@ describe('serverFetch', () => {
 
     expect(err).toBeInstanceOf(SsrfError)
     expect(err.code).toBe('RESPONSE_TOO_LARGE')
+    expect(cancelFn).toHaveBeenCalledOnce()
   })
 
-  it('allows responses within maxResponseSize', async () => {
-    const res = await serverFetch('https://example.com', { timeout: 5000 })
+  it('allows responses with Content-Length at the limit', async () => {
+    mockFetchResponse.value = {
+      status: 200,
+      headers: new Headers({ 'content-length': DEFAULT_MAX_RESPONSE_SIZE.toString() }),
+      body: null,
+    }
+
+    const res = await serverFetch('https://example.com', { timeout: 2000 })
     expect(res.status).toBe(200)
   })
 })
