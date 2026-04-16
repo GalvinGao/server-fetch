@@ -21,6 +21,8 @@ pnpm lint         # Run oxlint
 pnpm lint:fix     # Run oxlint with auto-fix
 pnpm fmt          # Format with oxfmt
 pnpm fmt:check    # Check formatting
+pnpm test         # Run tests with vitest
+pnpm test:watch   # Run tests in watch mode
 ```
 
 ## Code style
@@ -40,5 +42,4 @@ src/
 
 ## Dependencies
 
-- `ip-address` — IPv4/IPv6 parsing and subnet matching
-- `psl` — Public Suffix List validation for hostnames
+- `undici` (peer) — provides `Agent` with `connect.lookup` hook for SSRF-safe DNS resolution
