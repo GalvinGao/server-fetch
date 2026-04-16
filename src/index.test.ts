@@ -310,6 +310,30 @@ describe('serverFetch', () => {
 
     expect(res.status).toBe(200)
   })
+
+  it('rejects negative maxResponseSize', async () => {
+    const err = await serverFetch('https://example.com', {
+      maxResponseSize: -1,
+    }).catch((e) => e)
+    expect(err).toBeInstanceOf(SsrfError)
+    expect(err.code).toBe('INVALID_OPTION')
+  })
+
+  it('rejects zero maxResponseSize', async () => {
+    const err = await serverFetch('https://example.com', {
+      maxResponseSize: 0,
+    }).catch((e) => e)
+    expect(err).toBeInstanceOf(SsrfError)
+    expect(err.code).toBe('INVALID_OPTION')
+  })
+
+  it('rejects non-integer maxResponseSize', async () => {
+    const err = await serverFetch('https://example.com', {
+      maxResponseSize: 1.5,
+    }).catch((e) => e)
+    expect(err).toBeInstanceOf(SsrfError)
+    expect(err.code).toBe('INVALID_OPTION')
+  })
 })
 
 describe('createSsrfSafeAgent', () => {

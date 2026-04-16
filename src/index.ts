@@ -166,6 +166,16 @@ export async function serverFetch(
   const { parsed } = await validateUrl(urlString)
 
   const maxResponseSize = options.maxResponseSize ?? DEFAULT_MAX_RESPONSE_SIZE
+  if (
+    maxResponseSize !== Infinity &&
+    (maxResponseSize <= 0 || !Number.isInteger(maxResponseSize))
+  ) {
+    throw new SsrfError(
+      'INVALID_OPTION',
+      'maxResponseSize must be a positive integer or Infinity',
+      urlString,
+    )
+  }
   const dispatcher =
     maxResponseSize === DEFAULT_MAX_RESPONSE_SIZE
       ? ssrfSafeAgent
@@ -201,8 +211,5 @@ export async function serverFetch(
     return response
   } finally {
     clearTimeout(timeoutId)
-    if (dispatcher !== ssrfSafeAgent) {
-      void dispatcher.close()
-    }
   }
 }
