@@ -28,15 +28,8 @@ jobs:
         run: pnpm fmt:check
 
       - name: tests
-        run: pnpm vitest run --coverage 2>&1 | tee test-output.txt
+        run: pnpm vitest run --coverage
 
-      - name: coverage summary
+      - name: coverage report
         if: always()
-        run: |
-          {
-            echo '### Coverage'
-            echo ''
-            echo '```'
-            sed -n '/% Coverage report/,/===$/p' test-output.txt
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+        uses: davelosert/vitest-coverage-report-action@v2
