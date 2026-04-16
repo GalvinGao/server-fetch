@@ -67,6 +67,7 @@ function ssrfSafeLookup(
 
 const ssrfSafeAgent = new Agent({
   connect: { lookup: ssrfSafeLookup },
+  maxResponseSize: DEFAULT_MAX_RESPONSE_SIZE,
 })
 
 /**
@@ -150,6 +151,12 @@ export function createSsrfSafeAgent(options?: ConstructorParameters<typeof Agent
  * undici Agent whose `connect.lookup` rejects private/reserved IPs at connect
  * time. DNS resolution and TCP connect use the same resolved address — no
  * TOCTOU gap, no DNS rebinding possible.
+ *
+ * Response body size is limited by `maxResponseSize` (default 10 MB).
+ * Responses with a `Content-Length` header exceeding the limit are rejected
+ * immediately. Chunked responses are enforced by undici's Agent at the
+ * HTTP-parser level — undici throws `ResponseExceededMaxSizeError` during
+ * body consumption (`.text()`, `.json()`, etc.).
  */
 export async function serverFetch(
   url: string | URL,
@@ -157,6 +164,15 @@ export async function serverFetch(
 ): Promise<UndiciResponse> {
   const urlString = url.toString()
   const { parsed } = await validateUrl(urlString)
+
+  const maxResponseSize = options.maxResponseSize ?? DEFAULT_MAX_RESPONSE_SIZE
+  const dispatcher =
+    maxResponseSize === DEFAULT_MAX_RESPONSE_SIZE
+      ? ssrfSafeAgent
+      : new Agent({
+          connect: { lookup: ssrfSafeLookup },
+          maxResponseSize: maxResponseSize === Infinity ? -1 : maxResponseSize,
+        })
 
   const controller = new AbortController()
   const timeout = options.timeout ?? DEFAULT_TIMEOUT
@@ -166,8 +182,21 @@ export async function serverFetch(
     const response = await undiciFetch(parsed.href, {
       ...options,
       signal: controller.signal,
-      dispatcher: ssrfSafeAgent,
+      dispatcher,
     })
+
+    if (maxResponseSize !== Infinity) {
+      const contentLength = response.headers.get('content-length')
+      if (contentLength && parseInt(contentLength, 10) > maxResponseSize) {
+        await response.body?.cancel()
+        throw new SsrfError(
+          'RESPONSE_TOO_LARGE',
+          `Response Content-Length ${contentLength} exceeds limit of ${maxResponseSize} bytes`,
+          urlString,
+        )
+      }
+    }
+
     return response
   } finally {
     clearTimeout(timeoutId)

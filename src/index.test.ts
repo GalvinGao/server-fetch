@@ -9,6 +9,24 @@ import {
   validateUrl,
 } from './index'
 
+// Holds a one-shot override for undici fetch; null means use the real fetch.
+const mockFetchResponse = { value: null as any }
+
+vi.mock('undici', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('undici')>()
+  return {
+    ...actual,
+    fetch: async (...args: Parameters<typeof actual.fetch>) => {
+      if (mockFetchResponse.value !== null) {
+        const response = mockFetchResponse.value
+        mockFetchResponse.value = null
+        return response
+      }
+      return actual.fetch(...args)
+    },
+  }
+})
+
 describe('SsrfError', () => {
   it('has code, url, and message', () => {
     const err = new SsrfError('BLOCKED_IP', 'Blocked IP: 127.0.0.1', 'http://localhost/')
@@ -220,6 +238,40 @@ describe('serverFetch', () => {
     lookupSpy.mockRestore()
 
     expect(err).not.toBeInstanceOf(SsrfError)
+  })
+
+  it('rejects when Content-Length exceeds default maxResponseSize', async () => {
+    const hugeContentLength = (DEFAULT_MAX_RESPONSE_SIZE + 1).toString()
+    mockFetchResponse.value = {
+      headers: new Headers({ 'content-length': hugeContentLength }),
+      body: { cancel: vi.fn() },
+    }
+
+    const err = await serverFetch('https://example.com', { timeout: 2000 }).catch((e) => e)
+
+    expect(err).toBeInstanceOf(SsrfError)
+    expect(err.code).toBe('RESPONSE_TOO_LARGE')
+    expect(err.message).toContain(hugeContentLength)
+  })
+
+  it('rejects when Content-Length exceeds custom maxResponseSize', async () => {
+    mockFetchResponse.value = {
+      headers: new Headers({ 'content-length': '2000' }),
+      body: { cancel: vi.fn() },
+    }
+
+    const err = await serverFetch('https://example.com', {
+      timeout: 2000,
+      maxResponseSize: 1000,
+    }).catch((e) => e)
+
+    expect(err).toBeInstanceOf(SsrfError)
+    expect(err.code).toBe('RESPONSE_TOO_LARGE')
+  })
+
+  it('allows responses within maxResponseSize', async () => {
+    const res = await serverFetch('https://example.com', { timeout: 5000 })
+    expect(res.status).toBe(200)
   })
 })
 
