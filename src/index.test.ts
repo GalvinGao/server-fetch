@@ -287,6 +287,21 @@ describe('serverFetch', () => {
     const res = await serverFetch('https://example.com', { timeout: 2000 })
     expect(res.status).toBe(200)
   })
+
+  it('disables size limit when maxResponseSize is Infinity', async () => {
+    mockFetchResponse.value = {
+      status: 200,
+      headers: new Headers({ 'content-length': '999999999999' }),
+      body: null,
+    }
+
+    const res = await serverFetch('https://example.com', {
+      timeout: 2000,
+      maxResponseSize: Infinity,
+    })
+
+    expect(res.status).toBe(200)
+  })
 })
 
 describe('createSsrfSafeAgent', () => {
