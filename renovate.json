@@ -1,0 +1,54 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":semanticCommits",
+    ":separateMajorReleases",
+    "group:allNonMajor",
+    ":dependencyDashboard",
+    "abandonments:recommended",
+    "helpers:pinGitHubActionDigests",
+    "docker:pinDigests"
+  ],
+  "baseBranchPatterns": ["main"],
+  "labels": ["dependencies"],
+  "prConcurrentLimit": 5,
+  "rangeStrategy": "bump",
+  "minimumReleaseAge": "5 days",
+  "prCreation": "not-pending",
+  "postUpdateOptions": ["pnpmDedupe"],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 5am on monday"],
+    "automerge": true
+  },
+  "packageRules": [
+    {
+      "description": "Pin TypeScript to exact version (compiler consistency)",
+      "matchPackageNames": ["typescript"],
+      "rangeStrategy": "pin"
+    },
+    {
+      "description": "Pin oxfmt and oxlint to exact versions (formatter/linter consistency)",
+      "matchPackageNames": ["oxfmt", "oxlint"],
+      "rangeStrategy": "pin"
+    },
+    {
+      "description": "Auto-merge type definition packages",
+      "groupName": "types",
+      "matchPackageNames": ["@types/**"],
+      "automerge": true
+    },
+    {
+      "description": "Auto-merge non-major devDependency updates",
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true
+    },
+    {
+      "description": "GitHub Actions",
+      "groupName": "github-actions",
+      "matchManagers": ["github-actions"]
+    }
+  ]
+}
