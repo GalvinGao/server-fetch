@@ -96,4 +96,26 @@ describe('isPrivateIp', () => {
       expect(isPrivateIp('2001:4860:4860::8888')).toBe(false)
     })
   })
+
+  describe('IPv4-mapped IPv6 bypass vectors', () => {
+    it('blocks ::ffff:127.0.0.1 (IPv4-mapped loopback)', () => {
+      expect(isPrivateIp('::ffff:127.0.0.1')).toBe(true)
+    })
+
+    it('blocks ::ffff:10.0.0.1 (IPv4-mapped private)', () => {
+      expect(isPrivateIp('::ffff:10.0.0.1')).toBe(true)
+    })
+
+    it('blocks ::ffff:169.254.169.254 (IPv4-mapped metadata)', () => {
+      expect(isPrivateIp('::ffff:169.254.169.254')).toBe(true)
+    })
+
+    it('blocks ::ffff:7f00:1 (IPv4-mapped loopback hex form)', () => {
+      expect(isPrivateIp('::ffff:7f00:1')).toBe(true)
+    })
+
+    it('allows ::ffff:8.8.8.8 (IPv4-mapped public)', () => {
+      expect(isPrivateIp('::ffff:8.8.8.8')).toBe(false)
+    })
+  })
 })

@@ -1,4 +1,4 @@
-name: Lint
+name: CI
 
 on:
   push:
@@ -26,3 +26,6 @@ jobs:
 
       - name: oxfmt check
         run: pnpm fmt:check
+
+      - name: tests
+        run: pnpm test

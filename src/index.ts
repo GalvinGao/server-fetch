@@ -1,11 +1,12 @@
 import dns from 'node:dns'
 import { isIP } from 'node:net'
-import { Agent, fetch as undiciFetch } from 'undici'
+import { Agent, type Response as UndiciResponse, fetch as undiciFetch } from 'undici'
 import { isPrivateIp } from './blocklist'
 import { SsrfError } from './error'
 
 export { SsrfError } from './error'
 export { isPrivateIp } from './blocklist'
+export type { Response as UndiciResponse } from 'undici'
 
 export interface ServerFetchOptions extends RequestInit {
   timeout?: number
@@ -150,7 +151,7 @@ export function createSsrfSafeAgent(options?: ConstructorParameters<typeof Agent
 export async function serverFetch(
   url: string | URL,
   options: ServerFetchOptions = {},
-): Promise<Response> {
+): Promise<UndiciResponse> {
   const urlString = url.toString()
   const { parsed } = await validateUrl(urlString)
 

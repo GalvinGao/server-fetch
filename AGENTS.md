@@ -37,7 +37,11 @@ pnpm test:watch   # Run tests in watch mode
 
 ```
 src/
-  index.ts    # Single entry point — exports serverFetch()
+  index.ts          # Entry point — exports serverFetch(), validateUrl(), createSsrfSafeAgent()
+  blocklist.ts      # IP blocklist using node:net BlockList (IPv4 + IPv6 ranges)
+  error.ts          # SsrfError class with typed error codes
+  index.test.ts     # Tests for validateUrl, serverFetch, createSsrfSafeAgent
+  blocklist.test.ts # Tests for IP range blocking (19 ranges + bypass vectors)
 ```
 
 ## Dependencies

@@ -33,12 +33,9 @@ describe('validateUrl', () => {
   })
 
   it('rejects non-http with BLOCKED_PROTOCOL code', async () => {
-    try {
-      await validateUrl('ftp://example.com/')
-    } catch (e) {
-      expect(e).toBeInstanceOf(SsrfError)
-      expect((e as SsrfError).code).toBe('BLOCKED_PROTOCOL')
-    }
+    const err = await validateUrl('ftp://example.com/').catch((e) => e)
+    expect(err).toBeInstanceOf(SsrfError)
+    expect(err.code).toBe('BLOCKED_PROTOCOL')
   })
 
   it('rejects non-standard ports', async () => {
@@ -47,12 +44,9 @@ describe('validateUrl', () => {
   })
 
   it('rejects non-standard ports with BLOCKED_PORT code', async () => {
-    try {
-      await validateUrl('http://example.com:8080/')
-    } catch (e) {
-      expect(e).toBeInstanceOf(SsrfError)
-      expect((e as SsrfError).code).toBe('BLOCKED_PORT')
-    }
+    const err = await validateUrl('http://example.com:8080/').catch((e) => e)
+    expect(err).toBeInstanceOf(SsrfError)
+    expect(err.code).toBe('BLOCKED_PORT')
   })
 
   it('rejects invalid URLs', async () => {
@@ -61,12 +55,9 @@ describe('validateUrl', () => {
   })
 
   it('rejects invalid URLs with INVALID_URL code', async () => {
-    try {
-      await validateUrl('not-a-url')
-    } catch (e) {
-      expect(e).toBeInstanceOf(SsrfError)
-      expect((e as SsrfError).code).toBe('INVALID_URL')
-    }
+    const err = await validateUrl('not-a-url').catch((e) => e)
+    expect(err).toBeInstanceOf(SsrfError)
+    expect(err.code).toBe('INVALID_URL')
   })
 
   it('rejects private IPv4 literals', async () => {
@@ -88,12 +79,9 @@ describe('validateUrl', () => {
   })
 
   it('rejects private IPs with BLOCKED_IP code', async () => {
-    try {
-      await validateUrl('http://127.0.0.1/')
-    } catch (e) {
-      expect(e).toBeInstanceOf(SsrfError)
-      expect((e as SsrfError).code).toBe('BLOCKED_IP')
-    }
+    const err = await validateUrl('http://127.0.0.1/').catch((e) => e)
+    expect(err).toBeInstanceOf(SsrfError)
+    expect(err.code).toBe('BLOCKED_IP')
   })
 })
 
