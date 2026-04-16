@@ -95,7 +95,7 @@ async function validateUrl(urlString: string): Promise<URL> {
 
 export async function serverFetch(
   url: string | URL,
-  options: ServerFetchOptions = {}
+  options: ServerFetchOptions = {},
 ): Promise<Response> {
   const urlString = url.toString()
   const validatedUrl = await validateUrl(urlString)

@@ -3,6 +3,7 @@
 Safer `fetch` for server-side usages.
 
 This library is designed to be having a strict-by-default policy of fetching resources on the server-side. It currently will:
+
 - Enforce a 10s timeout by default.
 - Deny all requests with a hostname that resolves/resolves to a IP address to a private network IP address, a AWS IMDS endpoint, or a local network IP address.
 - Only allows URLs with the following rules:
