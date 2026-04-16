@@ -1,7 +1,13 @@
 import dns from 'node:dns'
 import { describe, expect, it, vi } from 'vitest'
 import { Agent } from 'undici'
-import { SsrfError, createSsrfSafeAgent, serverFetch, validateUrl } from './index'
+import {
+  DEFAULT_MAX_RESPONSE_SIZE,
+  SsrfError,
+  createSsrfSafeAgent,
+  serverFetch,
+  validateUrl,
+} from './index'
 
 describe('SsrfError', () => {
   it('has code, url, and message', () => {
@@ -11,6 +17,12 @@ describe('SsrfError', () => {
     expect(err.code).toBe('BLOCKED_IP')
     expect(err.url).toBe('http://localhost/')
     expect(err.message).toBe('Blocked IP: 127.0.0.1')
+  })
+})
+
+describe('DEFAULT_MAX_RESPONSE_SIZE', () => {
+  it('is 10MB', () => {
+    expect(DEFAULT_MAX_RESPONSE_SIZE).toBe(10 * 1024 * 1024)
   })
 })
 

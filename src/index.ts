@@ -1,15 +1,17 @@
 import dns from 'node:dns'
 import { isIP } from 'node:net'
-import { Agent, type Response as UndiciResponse, fetch as undiciFetch } from 'undici'
+import { Agent, type Response as UndiciResponse, errors, fetch as undiciFetch } from 'undici'
 import { isPrivateIp } from './blocklist'
 import { SsrfError } from './error'
 
 export { SsrfError } from './error'
 export { isPrivateIp } from './blocklist'
 export type { Response as UndiciResponse } from 'undici'
+export const { ResponseExceededMaxSizeError } = errors
 
 export interface ServerFetchOptions extends RequestInit {
   timeout?: number
+  maxResponseSize?: number
 }
 
 export interface ValidatedUrl {
@@ -19,6 +21,7 @@ export interface ValidatedUrl {
 }
 
 const DEFAULT_TIMEOUT = 10_000
+export const DEFAULT_MAX_RESPONSE_SIZE = 10 * 1024 * 1024
 const ALLOWED_PORTS = new Set([80, 443])
 
 /**
