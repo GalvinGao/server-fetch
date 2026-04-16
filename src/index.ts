@@ -1,113 +1,169 @@
-import { Address4, Address6 } from 'ip-address'
-import { lookup } from 'node:dns/promises'
-import { URL } from 'node:url'
-import publicSuffixList from 'psl'
+import dns from 'node:dns'
+import { isIP } from 'node:net'
+import { Agent } from 'undici'
+import { isPrivateIp } from './blocklist'
+import { SsrfError } from './error'
 
-interface ServerFetchOptions extends RequestInit {
+export { SsrfError } from './error'
+export { isPrivateIp } from './blocklist'
+
+export interface ServerFetchOptions extends RequestInit {
   timeout?: number
 }
 
-const DEFAULT_TIMEOUT = 10_000 // 10 seconds
+export interface ValidatedUrl {
+  parsed: URL
+  hostname: string
+  resolvedIps: string[]
+}
+
+const DEFAULT_TIMEOUT = 10_000
 const ALLOWED_PORTS = new Set([80, 443])
-const ALLOWED_SCHEMES = new Set(['http', 'https'])
-const AWS_IMDS_ENDPOINT = '169.254.169.254'
 
-// Helper function to normalize IP addresses
-function normalizeIP(ip: string): string {
-  try {
-    // Handle IPv4-mapped IPv6 addresses
-    if (ip.includes(':')) {
-      const addr6 = new Address6(ip)
-      if (addr6.is4()) {
-        return new Address4(addr6.to4().address).correctForm()
+/**
+ * Custom DNS lookup that rejects private/reserved IPs.
+ * Plugs into undici's `connect.lookup` so validation and connection
+ * use the same resolved address — no TOCTOU rebinding window.
+ */
+function ssrfSafeLookup(
+  hostname: string,
+  options: dns.LookupOptions,
+  callback: (
+    err: NodeJS.ErrnoException | null,
+    addresses: dns.LookupAddress[] | string,
+    family?: number,
+  ) => void,
+) {
+  dns.lookup(hostname, options, (err, addresses, family) => {
+    if (err) return callback(err, addresses, family)
+
+    if (Array.isArray(addresses)) {
+      for (const addr of addresses) {
+        if (isPrivateIp(addr.address)) {
+          return callback(
+            new SsrfError('BLOCKED_IP', `Blocked IP: ${addr.address}`, hostname),
+            addresses,
+            family,
+          )
+        }
       }
-      return addr6.correctForm()
+      return callback(null, addresses, family)
     }
-    // Handle regular IPv4
-    return new Address4(ip).correctForm()
-  } catch {
-    throw new Error(`Invalid IP address: ${ip}`)
-  }
+
+    if (isPrivateIp(addresses)) {
+      return callback(
+        new SsrfError('BLOCKED_IP', `Blocked IP: ${addresses}`, hostname),
+        addresses,
+        family,
+      )
+    }
+    callback(null, addresses, family)
+  })
 }
 
-// Private network ranges from IANA list
-const PRIVATE_IPV4_RANGES = [
-  '0.0.0.0/8',
-  '10.0.0.0/8',
-  '100.64.0.0/10',
-  '127.0.0.0/8',
-  '169.254.0.0/16',
-  '172.16.0.0/12',
-  '192.168.0.0/16',
-  '198.18.0.0/15',
-  '240.0.0.0/4',
-]
+const ssrfSafeAgent = new Agent({
+  connect: { lookup: ssrfSafeLookup },
+})
 
-const PRIVATE_IPV6_RANGES = ['::1/128', '::/128', 'fc00::/7', 'fe80::/10']
-
-async function isPrivateHostname(hostname: string): Promise<boolean> {
+/**
+ * Validate that a URL targets only public IPs and uses http(s).
+ * Resolves DNS and checks every returned address.
+ *
+ * **WARNING:** Using this to validate a URL and then passing it to a separate
+ * `fetch()` call reintroduces the DNS rebinding TOCTOU window. You should
+ * almost always use `serverFetch()` instead. This function exists for
+ * registration-time checks (e.g., validating a webhook URL before saving it)
+ * where no fetch happens.
+ *
+ * @throws SsrfError if blocked.
+ */
+export async function validateUrl(url: string): Promise<ValidatedUrl> {
+  let parsed: URL
   try {
-    const ip = await lookup(hostname)
-    const normalizedIP = normalizeIP(ip.address)
-
-    if (ip.family === 4) {
-      const addr = new Address4(normalizedIP)
-      if (normalizedIP === AWS_IMDS_ENDPOINT) {
-        return true
-      }
-
-      return PRIVATE_IPV4_RANGES.some((range) => addr.isInSubnet(new Address4(range)))
-    } else {
-      const addr = new Address6(normalizedIP)
-      return PRIVATE_IPV6_RANGES.some((range) => addr.isInSubnet(new Address6(range)))
-    }
+    parsed = new URL(url)
   } catch {
-    throw new Error(`Invalid hostname: ${hostname}`)
-  }
-}
-
-async function validateUrl(urlString: string): Promise<URL> {
-  const url = new URL(urlString)
-
-  // Validate scheme
-  if (!ALLOWED_SCHEMES.has(url.protocol.slice(0, -1))) {
-    throw new Error(`Invalid scheme: ${url.protocol}`)
+    throw new SsrfError('INVALID_URL', 'Invalid URL', url)
   }
 
-  // Validate port
-  const port = url.port ? parseInt(url.port, 10) : url.protocol === 'https:' ? 443 : 80
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new SsrfError('BLOCKED_PROTOCOL', `Blocked protocol: ${parsed.protocol}`, url)
+  }
+
+  const port = parsed.port ? parseInt(parsed.port, 10) : parsed.protocol === 'https:' ? 443 : 80
   if (!ALLOWED_PORTS.has(port)) {
-    throw new Error(`Invalid port: ${port}`)
+    throw new SsrfError('BLOCKED_PORT', `Blocked port: ${port}`, url)
   }
 
-  // Validate hostname against public suffix list
-  if (!publicSuffixList.isValid(url.hostname)) {
-    throw new Error(`Invalid hostname: ${url.hostname}`)
+  const hostname = parsed.hostname.replace(/^\[|\]$/g, '')
+
+  if (isIP(hostname)) {
+    if (isPrivateIp(hostname)) {
+      throw new SsrfError('BLOCKED_IP', `Blocked IP: ${hostname}`, url)
+    }
+    return { resolvedIps: [hostname], hostname, parsed }
   }
 
-  // Check for private network
-  if (await isPrivateHostname(url.hostname)) {
-    throw new Error('Private network addresses are not allowed')
+  let addresses: dns.LookupAddress[]
+  try {
+    addresses = await dns.promises.lookup(hostname, { all: true })
+  } catch {
+    throw new SsrfError('DNS_FAILED', `DNS resolution failed for ${hostname}`, url)
   }
 
-  return url
+  if (addresses.length === 0) {
+    throw new SsrfError('DNS_FAILED', `DNS resolved to zero addresses for ${hostname}`, url)
+  }
+
+  for (const addr of addresses) {
+    if (isPrivateIp(addr.address)) {
+      throw new SsrfError('BLOCKED_IP', `Blocked IP: ${addr.address}`, url)
+    }
+  }
+
+  return {
+    resolvedIps: addresses.map((a) => a.address),
+    hostname,
+    parsed,
+  }
 }
 
+/**
+ * Create an undici Agent with the SSRF-safe DNS lookup baked in.
+ * The safe lookup is always applied; options are merged with it, not replacing it.
+ */
+export function createSsrfSafeAgent(options?: ConstructorParameters<typeof Agent>[0]): Agent {
+  const connectOpts = typeof options?.connect === 'object' ? options.connect : {}
+  return new Agent({
+    ...options,
+    connect: { ...connectOpts, lookup: ssrfSafeLookup },
+  })
+}
+
+/**
+ * SSRF-safe fetch.
+ *
+ * Validates the URL (protocol, port, DNS resolution) then fetches using an
+ * undici Agent whose `connect.lookup` rejects private/reserved IPs at connect
+ * time. DNS resolution and TCP connect use the same resolved address — no
+ * TOCTOU gap, no DNS rebinding possible.
+ */
 export async function serverFetch(
   url: string | URL,
   options: ServerFetchOptions = {},
 ): Promise<Response> {
   const urlString = url.toString()
-  const validatedUrl = await validateUrl(urlString)
+  const { parsed } = await validateUrl(urlString)
 
   const controller = new AbortController()
   const timeout = options.timeout ?? DEFAULT_TIMEOUT
   const timeoutId = setTimeout(() => controller.abort(), timeout)
 
   try {
-    const response = await fetch(validatedUrl, {
+    const response = await fetch(parsed.href, {
       ...options,
       signal: controller.signal,
+      // @ts-expect-error -- dispatcher is a valid undici option on Node's built-in fetch
+      dispatcher: ssrfSafeAgent,
     })
     return response
   } finally {
