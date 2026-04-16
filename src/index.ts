@@ -1,6 +1,6 @@
 import dns from 'node:dns'
 import { isIP } from 'node:net'
-import { Agent } from 'undici'
+import { Agent, fetch as undiciFetch } from 'undici'
 import { isPrivateIp } from './blocklist'
 import { SsrfError } from './error'
 
@@ -159,10 +159,9 @@ export async function serverFetch(
   const timeoutId = setTimeout(() => controller.abort(), timeout)
 
   try {
-    const response = await fetch(parsed.href, {
+    const response = await undiciFetch(parsed.href, {
       ...options,
       signal: controller.signal,
-      // @ts-expect-error -- dispatcher is a valid undici option on Node's built-in fetch
       dispatcher: ssrfSafeAgent,
     })
     return response

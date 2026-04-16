@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { SsrfError, validateUrl } from './index'
+import { Agent } from 'undici'
+import { SsrfError, createSsrfSafeAgent, serverFetch, validateUrl } from './index'
 
 describe('SsrfError', () => {
   it('has code, url, and message', () => {
@@ -93,5 +94,32 @@ describe('validateUrl', () => {
       expect(e).toBeInstanceOf(SsrfError)
       expect((e as SsrfError).code).toBe('BLOCKED_IP')
     }
+  })
+})
+
+describe('serverFetch', () => {
+  it('blocks private IPs at the dispatcher level', async () => {
+    await expect(serverFetch('http://127.0.0.1/', { timeout: 2000 })).rejects.toThrow(SsrfError)
+  })
+
+  it('blocks localhost via DNS at the dispatcher level', async () => {
+    await expect(serverFetch('http://localhost/', { timeout: 2000 })).rejects.toThrow(SsrfError)
+  })
+
+  it('fetches public URLs successfully', async () => {
+    const res = await serverFetch('https://example.com', { timeout: 5000 })
+    expect(res.status).toBe(200)
+  })
+})
+
+describe('createSsrfSafeAgent', () => {
+  it('returns an Agent instance', () => {
+    const agent = createSsrfSafeAgent()
+    expect(agent).toBeInstanceOf(Agent)
+  })
+
+  it('merges custom options while keeping safe lookup', () => {
+    const agent = createSsrfSafeAgent({ connections: 5 })
+    expect(agent).toBeInstanceOf(Agent)
   })
 })
