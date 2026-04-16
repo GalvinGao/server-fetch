@@ -37,10 +37,9 @@ jobs:
         run: pnpm build
 
       - name: publish
-        # Remove the .npmrc that setup-node created (contains GITHUB_TOKEN
-        # as _authToken, which overrides OIDC). npm then falls back to
-        # trusted publisher OIDC authentication.
+        # setup-node sets NODE_AUTH_TOKEN to GITHUB_TOKEN automatically.
+        # Unset it so npm falls back to OIDC trusted publisher authentication.
+        # Keep the .npmrc (it contains the registry URL npm needs for OIDC).
         run: |
-          rm -f "$NPM_CONFIG_USERCONFIG"
           unset NODE_AUTH_TOKEN
           npm publish --access public --provenance
