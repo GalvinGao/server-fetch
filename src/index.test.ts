@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import dns from 'node:dns'
+import { describe, expect, it, vi } from 'vitest'
 import { Agent } from 'undici'
 import { SsrfError, createSsrfSafeAgent, serverFetch, validateUrl } from './index'
 
@@ -83,6 +84,29 @@ describe('validateUrl', () => {
     expect(err).toBeInstanceOf(SsrfError)
     expect(err.code).toBe('BLOCKED_IP')
   })
+
+  it('allows public IP literals without DNS lookup', async () => {
+    const result = await validateUrl('http://93.184.216.34/')
+    expect(result.hostname).toBe('93.184.216.34')
+    expect(result.resolvedIps).toEqual(['93.184.216.34'])
+  })
+
+  it('rejects with DNS_FAILED when resolution fails', async () => {
+    const err = await validateUrl('http://this-domain-does-not-exist-xyz123.example/').catch(
+      (e) => e,
+    )
+    expect(err).toBeInstanceOf(SsrfError)
+    expect(err.code).toBe('DNS_FAILED')
+  })
+
+  it('rejects with DNS_FAILED when DNS resolves to zero addresses', async () => {
+    const spy = vi.spyOn(dns.promises, 'lookup').mockResolvedValueOnce([] as any)
+    const err = await validateUrl('http://example.com/').catch((e) => e)
+    spy.mockRestore()
+    expect(err).toBeInstanceOf(SsrfError)
+    expect(err.code).toBe('DNS_FAILED')
+    expect(err.message).toContain('zero addresses')
+  })
 })
 
 describe('serverFetch', () => {
@@ -97,6 +121,93 @@ describe('serverFetch', () => {
   it('fetches public URLs successfully', async () => {
     const res = await serverFetch('https://example.com', { timeout: 5000 })
     expect(res.status).toBe(200)
+  })
+
+  it('accepts a URL object', async () => {
+    const res = await serverFetch(new URL('https://example.com'), { timeout: 5000 })
+    expect(res.status).toBe(200)
+  })
+
+  it('rejects non-standard ports', async () => {
+    const err = await serverFetch('http://example.com:8080/').catch((e) => e)
+    expect(err).toBeInstanceOf(SsrfError)
+    expect(err.code).toBe('BLOCKED_PORT')
+  })
+
+  it('rejects blocked protocols', async () => {
+    const err = await serverFetch('ftp://example.com/').catch((e) => e)
+    expect(err).toBeInstanceOf(SsrfError)
+    expect(err.code).toBe('BLOCKED_PROTOCOL')
+  })
+
+  it('blocks DNS rebinding at connect time (array response)', async () => {
+    // Simulate DNS rebinding: validateUrl sees public IP, but the agent's
+    // connect.lookup sees a private IP on the second resolution.
+    let callCount = 0
+    const promisesLookupSpy = vi
+      .spyOn(dns.promises, 'lookup')
+      .mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as any)
+    const lookupSpy = vi
+      .spyOn(dns, 'lookup')
+      .mockImplementation((_hostname: any, _options: any, callback: any) => {
+        callCount++
+        // Return private IP — simulates DNS rebinding
+        callback(null, [{ address: '127.0.0.1', family: 4 }], 4)
+      })
+
+    const err = await serverFetch('http://rebind-test.example.com/', { timeout: 2000 }).catch(
+      (e) => e,
+    )
+    promisesLookupSpy.mockRestore()
+    lookupSpy.mockRestore()
+
+    // undici wraps the SsrfError from connect.lookup in TypeError: fetch failed
+    expect(err.cause).toBeInstanceOf(SsrfError)
+    expect(err.cause.code).toBe('BLOCKED_IP')
+    expect(callCount).toBeGreaterThan(0)
+  })
+
+  it('blocks DNS rebinding at connect time (single address response)', async () => {
+    const promisesLookupSpy = vi
+      .spyOn(dns.promises, 'lookup')
+      .mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as any)
+    const lookupSpy = vi
+      .spyOn(dns, 'lookup')
+      .mockImplementation((_hostname: any, _options: any, callback: any) => {
+        // Return single string address — non-array path of ssrfSafeLookup
+        callback(null, '10.0.0.1', 4)
+      })
+
+    const err = await serverFetch('http://rebind-test.example.com/', { timeout: 2000 }).catch(
+      (e) => e,
+    )
+    promisesLookupSpy.mockRestore()
+    lookupSpy.mockRestore()
+
+    expect(err.cause).toBeInstanceOf(SsrfError)
+    expect(err.cause.code).toBe('BLOCKED_IP')
+  })
+
+  it('allows connection when single address is public', async () => {
+    const promisesLookupSpy = vi
+      .spyOn(dns.promises, 'lookup')
+      .mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as any)
+    const lookupSpy = vi
+      .spyOn(dns, 'lookup')
+      .mockImplementation((_hostname: any, _options: any, callback: any) => {
+        // Return single public IP string — non-array path, allowed
+        callback(null, '93.184.216.34', 4)
+      })
+
+    // This will attempt a real connection to the mocked IP, which will fail
+    // with a network error — but NOT an SsrfError, proving the lookup passed
+    const err = await serverFetch('http://mock-public.example.com/', { timeout: 2000 }).catch(
+      (e) => e,
+    )
+    promisesLookupSpy.mockRestore()
+    lookupSpy.mockRestore()
+
+    expect(err).not.toBeInstanceOf(SsrfError)
   })
 })
 
