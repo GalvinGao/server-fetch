@@ -30,6 +30,11 @@ jobs:
       - name: tests
         run: pnpm vitest run --coverage
 
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+
       - name: coverage report
         if: always()
         uses: davelosert/vitest-coverage-report-action@v2
