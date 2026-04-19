@@ -1,5 +1,18 @@
 # server-fetch
 
+[![CI](https://github.com/GalvinGao/server-fetch/actions/workflows/ci.yml/badge.svg)](https://github.com/GalvinGao/server-fetch/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/server-fetch)](https://www.npmjs.com/package/server-fetch)
+[![npm downloads](https://img.shields.io/npm/dm/server-fetch)](https://www.npmjs.com/package/server-fetch)
+[![bundle size](https://img.shields.io/bundlephobia/minzip/server-fetch)](https://bundlephobia.com/package/server-fetch)
+[![license](https://img.shields.io/npm/l/server-fetch)](https://github.com/GalvinGao/server-fetch/blob/main/LICENSE)
+[![node](https://img.shields.io/node/v/server-fetch)](https://nodejs.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](https://www.typescriptlang.org)
+[![npm provenance](https://img.shields.io/badge/npm-provenance-green)](https://docs.npmjs.com/generating-provenance-statements)
+[![codecov](https://codecov.io/gh/GalvinGao/server-fetch/graph/badge.svg)](https://codecov.io/gh/GalvinGao/server-fetch)
+
+<!-- [![Known Vulnerabilities](https://snyk.io/test/github/GalvinGao/server-fetch/badge.svg)](https://snyk.io/test/github/GalvinGao/server-fetch) -->
+<!-- [![Socket Badge](https://socket.dev/api/badge/npm/package/server-fetch)](https://socket.dev/npm/package/server-fetch) -->
+
 SSRF-safe `fetch()` for server-side use.
 
 Validates URLs against private/reserved IP ranges, enforces scheme and port restrictions, and — critically — uses undici's `connect.lookup` hook so DNS resolution and TCP connection use the same resolved address. No TOCTOU gap, no DNS rebinding.

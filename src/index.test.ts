@@ -1,7 +1,36 @@
 import dns from 'node:dns'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Agent } from 'undici'
-import { SsrfError, createSsrfSafeAgent, serverFetch, validateUrl } from './index'
+import {
+  DEFAULT_MAX_RESPONSE_SIZE,
+  ResponseExceededMaxSizeError,
+  SsrfError,
+  createSsrfSafeAgent,
+  serverFetch,
+  validateUrl,
+} from './index'
+
+// Holds a one-shot override for undici fetch; null means use the real fetch.
+const mockFetchResponse = { value: null as any }
+
+vi.mock('undici', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('undici')>()
+  return {
+    ...actual,
+    fetch: async (...args: Parameters<typeof actual.fetch>) => {
+      if (mockFetchResponse.value !== null) {
+        const response = mockFetchResponse.value
+        mockFetchResponse.value = null
+        return response
+      }
+      return actual.fetch(...args)
+    },
+  }
+})
+
+afterEach(() => {
+  mockFetchResponse.value = null
+})
 
 describe('SsrfError', () => {
   it('has code, url, and message', () => {
@@ -11,6 +40,19 @@ describe('SsrfError', () => {
     expect(err.code).toBe('BLOCKED_IP')
     expect(err.url).toBe('http://localhost/')
     expect(err.message).toBe('Blocked IP: 127.0.0.1')
+  })
+})
+
+describe('DEFAULT_MAX_RESPONSE_SIZE', () => {
+  it('is 10MB', () => {
+    expect(DEFAULT_MAX_RESPONSE_SIZE).toBe(10 * 1024 * 1024)
+  })
+})
+
+describe('ResponseExceededMaxSizeError', () => {
+  it('is re-exported from undici', () => {
+    expect(ResponseExceededMaxSizeError).toBeDefined()
+    expect(ResponseExceededMaxSizeError.name).toBe('ResponseExceededMaxSizeError')
   })
 })
 
@@ -208,6 +250,89 @@ describe('serverFetch', () => {
     lookupSpy.mockRestore()
 
     expect(err).not.toBeInstanceOf(SsrfError)
+  })
+
+  it('rejects when Content-Length exceeds default maxResponseSize', async () => {
+    const hugeContentLength = (DEFAULT_MAX_RESPONSE_SIZE + 1).toString()
+    const cancelFn = vi.fn()
+    mockFetchResponse.value = {
+      headers: new Headers({ 'content-length': hugeContentLength }),
+      body: { cancel: cancelFn },
+    }
+
+    const err = await serverFetch('https://example.com', { timeout: 2000 }).catch((e) => e)
+
+    expect(err).toBeInstanceOf(SsrfError)
+    expect(err.code).toBe('RESPONSE_TOO_LARGE')
+    expect(err.message).toContain(hugeContentLength)
+    expect(cancelFn).toHaveBeenCalledOnce()
+  })
+
+  it('rejects when Content-Length exceeds custom maxResponseSize', async () => {
+    const cancelFn = vi.fn()
+    mockFetchResponse.value = {
+      headers: new Headers({ 'content-length': '2000' }),
+      body: { cancel: cancelFn },
+    }
+
+    const err = await serverFetch('https://example.com', {
+      timeout: 2000,
+      maxResponseSize: 1000,
+    }).catch((e) => e)
+
+    expect(err).toBeInstanceOf(SsrfError)
+    expect(err.code).toBe('RESPONSE_TOO_LARGE')
+    expect(cancelFn).toHaveBeenCalledOnce()
+  })
+
+  it('allows responses with Content-Length at the limit', async () => {
+    mockFetchResponse.value = {
+      status: 200,
+      headers: new Headers({ 'content-length': DEFAULT_MAX_RESPONSE_SIZE.toString() }),
+      body: null,
+    }
+
+    const res = await serverFetch('https://example.com', { timeout: 2000 })
+    expect(res.status).toBe(200)
+  })
+
+  it('disables size limit when maxResponseSize is Infinity', async () => {
+    mockFetchResponse.value = {
+      status: 200,
+      headers: new Headers({ 'content-length': '999999999999' }),
+      body: null,
+    }
+
+    const res = await serverFetch('https://example.com', {
+      timeout: 2000,
+      maxResponseSize: Infinity,
+    })
+
+    expect(res.status).toBe(200)
+  })
+
+  it('rejects negative maxResponseSize', async () => {
+    const err = await serverFetch('https://example.com', {
+      maxResponseSize: -1,
+    }).catch((e) => e)
+    expect(err).toBeInstanceOf(SsrfError)
+    expect(err.code).toBe('INVALID_OPTION')
+  })
+
+  it('rejects zero maxResponseSize', async () => {
+    const err = await serverFetch('https://example.com', {
+      maxResponseSize: 0,
+    }).catch((e) => e)
+    expect(err).toBeInstanceOf(SsrfError)
+    expect(err.code).toBe('INVALID_OPTION')
+  })
+
+  it('rejects non-integer maxResponseSize', async () => {
+    const err = await serverFetch('https://example.com', {
+      maxResponseSize: 1.5,
+    }).catch((e) => e)
+    expect(err).toBeInstanceOf(SsrfError)
+    expect(err.code).toBe('INVALID_OPTION')
   })
 })
 
