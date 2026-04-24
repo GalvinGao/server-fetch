@@ -45,7 +45,8 @@
     "fmt:check": "oxfmt --check",
     "prepublishOnly": "pnpm run build",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@j178/prek": "^0.3.9",
@@ -54,7 +55,7 @@
     "oxfmt": "^0.45.0",
     "oxlint": "^1.60.0",
     "tsdown": "^0.21.8",
-    "typescript": "^5.6.3",
+    "typescript": "^6.0.3",
     "undici": "^8.1.0",
     "vitest": "^4.1.4"
   },

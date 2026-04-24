@@ -189,13 +189,15 @@ describe('serverFetch', () => {
     const promisesLookupSpy = vi
       .spyOn(dns.promises, 'lookup')
       .mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as any)
-    const lookupSpy = vi
-      .spyOn(dns, 'lookup')
-      .mockImplementation((_hostname: any, _options: any, callback: any) => {
-        callCount++
-        // Return private IP — simulates DNS rebinding
-        callback(null, [{ address: '127.0.0.1', family: 4 }], 4)
-      })
+    const lookupSpy = vi.spyOn(dns, 'lookup').mockImplementation(((
+      _hostname: any,
+      _options: any,
+      callback: any,
+    ) => {
+      callCount++
+      // Return private IP — simulates DNS rebinding
+      callback(null, [{ address: '127.0.0.1', family: 4 }], 4)
+    }) as never)
 
     const err = await serverFetch('http://rebind-test.example.com/', { timeout: 2000 }).catch(
       (e) => e,
@@ -213,12 +215,14 @@ describe('serverFetch', () => {
     const promisesLookupSpy = vi
       .spyOn(dns.promises, 'lookup')
       .mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as any)
-    const lookupSpy = vi
-      .spyOn(dns, 'lookup')
-      .mockImplementation((_hostname: any, _options: any, callback: any) => {
-        // Return single string address — non-array path of ssrfSafeLookup
-        callback(null, '10.0.0.1', 4)
-      })
+    const lookupSpy = vi.spyOn(dns, 'lookup').mockImplementation(((
+      _hostname: any,
+      _options: any,
+      callback: any,
+    ) => {
+      // Return single string address — non-array path of ssrfSafeLookup
+      callback(null, '10.0.0.1', 4)
+    }) as never)
 
     const err = await serverFetch('http://rebind-test.example.com/', { timeout: 2000 }).catch(
       (e) => e,
@@ -234,12 +238,14 @@ describe('serverFetch', () => {
     const promisesLookupSpy = vi
       .spyOn(dns.promises, 'lookup')
       .mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as any)
-    const lookupSpy = vi
-      .spyOn(dns, 'lookup')
-      .mockImplementation((_hostname: any, _options: any, callback: any) => {
-        // Return single public IP string — non-array path, allowed
-        callback(null, '93.184.216.34', 4)
-      })
+    const lookupSpy = vi.spyOn(dns, 'lookup').mockImplementation(((
+      _hostname: any,
+      _options: any,
+      callback: any,
+    ) => {
+      // Return single public IP string — non-array path, allowed
+      callback(null, '93.184.216.34', 4)
+    }) as never)
 
     // This will attempt a real connection to the mocked IP, which will fail
     // with a network error — but NOT an SsrfError, proving the lookup passed
