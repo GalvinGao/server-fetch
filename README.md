@@ -13,9 +13,7 @@
 <!-- [![Known Vulnerabilities](https://snyk.io/test/github/GalvinGao/server-fetch/badge.svg)](https://snyk.io/test/github/GalvinGao/server-fetch) -->
 <!-- [![Socket Badge](https://socket.dev/api/badge/npm/package/server-fetch)](https://socket.dev/npm/package/server-fetch) -->
 
-SSRF-safe `fetch()` for server-side use.
-
-Validates URLs against private/reserved IP ranges, enforces scheme and port restrictions, and — critically — uses undici's `connect.lookup` hook so DNS resolution and TCP connection use the same resolved address. No TOCTOU gap, no DNS rebinding.
+SSRF-safe `fetch()` for server-side Node.js — validates URLs against private/reserved IP ranges, enforces HTTP(S) and ports 80/443, caps response body size (default 10 MB), supports request timeouts (default 10 s), and closes the DNS-rebinding TOCTOU gap by sharing undici's `connect.lookup` between validation and TCP connect.
 
 ## Install
 
@@ -34,9 +32,19 @@ import { serverFetch } from 'server-fetch'
 const res = await serverFetch('https://example.com/api', {
   method: 'POST',
   body: JSON.stringify({ url: userInput }),
-  timeout: 5000, // optional, defaults to 10s
+  timeout: 5000, // optional, defaults to 10_000 (10 s)
+  maxResponseSize: 5 * 1024 * 1024, // optional, defaults to 10 MB; pass Infinity to disable
 })
 ```
+
+### Options
+
+| Option            | Type             | Default              | Description                                                                                                                                                                                                                                                                                                                    |
+| ----------------- | ---------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `timeout`         | `number` (ms)    | `10_000` (10 s)      | Aborts the request if it doesn't complete in time.                                                                                                                                                                                                                                                                             |
+| `maxResponseSize` | `number` (bytes) | `10_485_760` (10 MB) | Caps the response body size. Rejects synchronously if `Content-Length` exceeds the limit; otherwise undici throws `ResponseExceededMaxSizeError` during body consumption (`.text()`, `.json()`, …). Pass `Infinity` to disable. Must be a positive integer or `Infinity` — anything else throws `SsrfError('INVALID_OPTION')`. |
+
+All other `RequestInit` options except `signal` are forwarded to `undici.fetch` unchanged.
 
 ### Validate without fetching
 
@@ -102,7 +110,7 @@ try {
   await serverFetch(url)
 } catch (e) {
   if (e instanceof SsrfError) {
-    console.log(e.code) // INVALID_URL | BLOCKED_PROTOCOL | BLOCKED_PORT | BLOCKED_IP | DNS_FAILED
+    console.log(e.code) // INVALID_URL | BLOCKED_PROTOCOL | BLOCKED_PORT | BLOCKED_IP | DNS_FAILED | RESPONSE_TOO_LARGE | INVALID_OPTION
     console.log(e.url) // the offending URL
   }
 }
