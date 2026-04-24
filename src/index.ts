@@ -193,7 +193,7 @@ export async function serverFetch(
       ...options,
       signal: controller.signal,
       dispatcher,
-    })
+    } as Parameters<typeof undiciFetch>[1])
 
     if (maxResponseSize !== Infinity) {
       const contentLength = response.headers.get('content-length')

@@ -12,6 +12,7 @@ SSRF-safe `fetch()` wrapper for server-side Node.js. Validates URLs against priv
 
 - **Runtime:** Node.js `>=20.18.1`, ESM-first (dual ESM + CJS output via tsdown)
 - **Language:** TypeScript strict mode
+- **Typecheck:** `tsc --noEmit` via `pnpm typecheck` (TypeScript 6). Also used by `tsdown` for `.d.ts` emission.
 - **Lint / format:** oxlint + oxfmt (no semis, single quotes, trailing commas, 100 cols, 2-space indent)
 - **Package manager:** pnpm
 - **Tests:** vitest (v8 coverage)
@@ -25,6 +26,7 @@ pnpm dev                # tsdown --watch
 pnpm test               # vitest run
 pnpm test:watch         # vitest watch mode
 pnpm test -- <pattern>  # Run a single test file, e.g. `pnpm test -- blocklist`
+pnpm typecheck          # tsc --noEmit
 pnpm lint / lint:fix
 pnpm fmt / fmt:check
 ```
