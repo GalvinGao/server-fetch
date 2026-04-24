@@ -13,7 +13,9 @@
 <!-- [![Known Vulnerabilities](https://snyk.io/test/github/GalvinGao/server-fetch/badge.svg)](https://snyk.io/test/github/GalvinGao/server-fetch) -->
 <!-- [![Socket Badge](https://socket.dev/api/badge/npm/package/server-fetch)](https://socket.dev/npm/package/server-fetch) -->
 
-SSRF-safe `fetch()` for server-side Node.js — validates URLs against private/reserved IP ranges, enforces HTTP(S) and ports 80/443, caps response body size (default 10 MB), supports request timeouts (default 10 s), and closes the DNS-rebinding TOCTOU gap by sharing undici's `connect.lookup` between validation and TCP connect.
+Hardened `fetch()` for Node.js — safe against SSRF, DNS rebinding, oversized responses, and hung connections.
+
+Validates URLs against private/reserved IP ranges, allows only HTTP(S) on ports 80/443, caps response bodies at 10 MB (configurable via `maxResponseSize`), times out at 10 s (configurable via `timeout`), and shares one DNS lookup between validation and TCP connect via undici's `connect.lookup` — no TOCTOU gap.
 
 ## Install
 
