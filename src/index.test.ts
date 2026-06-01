@@ -97,6 +97,30 @@ describe('validateUrl', () => {
     await expect(validateUrl('')).rejects.toThrow(SsrfError)
   })
 
+  it('rejects URLs with embedded credentials (user:pass)', async () => {
+    const err = await validateUrl('http://user:pass@example.com/').catch((e) => e)
+    expect(err).toBeInstanceOf(SsrfError)
+    expect(err.code).toBe('BLOCKED_CREDENTIALS')
+  })
+
+  it('rejects URLs with embedded credentials (username only)', async () => {
+    const err = await validateUrl('http://user@example.com/').catch((e) => e)
+    expect(err).toBeInstanceOf(SsrfError)
+    expect(err.code).toBe('BLOCKED_CREDENTIALS')
+  })
+
+  it('does not leak the password in the error message', async () => {
+    const err = await validateUrl('http://user:supersecret@example.com/').catch((e) => e)
+    expect(err).toBeInstanceOf(SsrfError)
+    expect(err.message).not.toContain('supersecret')
+  })
+
+  it('allows credential-free URLs (regression)', async () => {
+    const result = await validateUrl('https://example.com/')
+    expect(result.parsed.protocol).toBe('https:')
+    expect(result.resolvedIps.length).toBeGreaterThan(0)
+  })
+
   it('rejects invalid URLs with INVALID_URL code', async () => {
     const err = await validateUrl('not-a-url').catch((e) => e)
     expect(err).toBeInstanceOf(SsrfError)
@@ -180,6 +204,18 @@ describe('serverFetch', () => {
     const err = await serverFetch('ftp://example.com/').catch((e) => e)
     expect(err).toBeInstanceOf(SsrfError)
     expect(err.code).toBe('BLOCKED_PROTOCOL')
+  })
+
+  it('rejects URLs with embedded credentials', async () => {
+    const err = await serverFetch('http://user:pass@example.com/').catch((e) => e)
+    expect(err).toBeInstanceOf(SsrfError)
+    expect(err.code).toBe('BLOCKED_CREDENTIALS')
+  })
+
+  it('does not leak the password in the error message', async () => {
+    const err = await serverFetch('http://user:supersecret@example.com/').catch((e) => e)
+    expect(err).toBeInstanceOf(SsrfError)
+    expect(err.message).not.toContain('supersecret')
   })
 
   it('blocks DNS rebinding at connect time (array response)', async () => {

@@ -76,6 +76,8 @@ const agent = createSsrfSafeAgent({ connections: 10 })
 
 **Ports:** Only 80 and 443.
 
+**Embedded credentials:** URLs carrying a userinfo component (e.g. `http://user:pass@host/`) are rejected — they enable allowlist-confusion attacks and leak credentials into logs.
+
 **IP ranges:**
 
 | IPv4             | Purpose                     |
@@ -112,7 +114,7 @@ try {
   await serverFetch(url)
 } catch (e) {
   if (e instanceof SsrfError) {
-    console.log(e.code) // INVALID_URL | BLOCKED_PROTOCOL | BLOCKED_PORT | BLOCKED_IP | DNS_FAILED | RESPONSE_TOO_LARGE | INVALID_OPTION
+    console.log(e.code) // INVALID_URL | BLOCKED_CREDENTIALS | BLOCKED_PROTOCOL | BLOCKED_PORT | BLOCKED_IP | DNS_FAILED | RESPONSE_TOO_LARGE | INVALID_OPTION
     console.log(e.url) // the offending URL
   }
 }

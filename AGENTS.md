@@ -54,7 +54,7 @@ The security property this library provides is: **the IP that passes validation 
 
 ### Error model
 
-`SsrfError` has a string `code` and the offending `url`. Current codes: `INVALID_URL`, `BLOCKED_PROTOCOL`, `BLOCKED_PORT`, `BLOCKED_IP`, `DNS_FAILED`, `RESPONSE_TOO_LARGE`, `INVALID_OPTION`. Add new codes here and document them in `README.md`.
+`SsrfError` has a string `code` and the offending `url`. Current codes: `INVALID_URL`, `BLOCKED_CREDENTIALS`, `BLOCKED_PROTOCOL`, `BLOCKED_PORT`, `BLOCKED_IP`, `DNS_FAILED`, `RESPONSE_TOO_LARGE`, `INVALID_OPTION`. Add new codes here and document them in `README.md`.
 
 ## Project structure
 
