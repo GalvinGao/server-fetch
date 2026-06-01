@@ -48,13 +48,15 @@ The security property this library provides is: **the IP that passes validation 
 
 `maxResponseSize: Infinity` disables the limit (mapped to undici's `-1` internally). Any other non-positive-integer value must throw `SsrfError('INVALID_OPTION')`.
 
+**Decompression guard:** `maxResponseSize` counts _wire_ bytes, so a compressed body can still expand past it. By default `serverFetch()` sends `accept-encoding: identity` (unless the caller set `accept-encoding` or `maxDecompressedSize`) so wire bytes equal body bytes. Setting `maxDecompressedSize` opts into compression and wraps the decompressed body stream (`limitDecompressedSize`), aborting with `SsrfError('DECOMPRESSED_TOO_LARGE')` past the cap; the wrapper strips `content-encoding`/`content-length` since they describe the wire body. Same `INVALID_OPTION` validation as `maxResponseSize`.
+
 ### Blocklist
 
 `src/blocklist.ts` uses `node:net` `BlockList` with 10 IPv4 + 7 IPv6 ranges. Any new range goes here with an RFC comment, and a corresponding case in `src/blocklist.test.ts`. The list covers cloud metadata (`169.254.169.254` via `169.254.0.0/16`), NAT64 prefixes, and SIIT — bypass vectors worth preserving tests for.
 
 ### Error model
 
-`SsrfError` has a string `code` and the offending `url`. Current codes: `INVALID_URL`, `BLOCKED_PROTOCOL`, `BLOCKED_PORT`, `BLOCKED_IP`, `DNS_FAILED`, `RESPONSE_TOO_LARGE`, `INVALID_OPTION`. Add new codes here and document them in `README.md`.
+`SsrfError` has a string `code` and the offending `url`. Current codes: `INVALID_URL`, `BLOCKED_PROTOCOL`, `BLOCKED_PORT`, `BLOCKED_IP`, `DNS_FAILED`, `RESPONSE_TOO_LARGE`, `DECOMPRESSED_TOO_LARGE`, `INVALID_OPTION`. Add new codes here and document them in `README.md`.
 
 ## Project structure
 

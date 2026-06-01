@@ -1,6 +1,12 @@
 import dns from 'node:dns'
 import { isIP } from 'node:net'
-import { Agent, type Response as UndiciResponse, errors, fetch as undiciFetch } from 'undici'
+import {
+  Agent,
+  Response as UndiciResponseClass,
+  type Response as UndiciResponse,
+  errors,
+  fetch as undiciFetch,
+} from 'undici'
 import { isPrivateIp } from './blocklist'
 import { SsrfError } from './error'
 
@@ -12,6 +18,18 @@ export const { ResponseExceededMaxSizeError } = errors
 export interface ServerFetchOptions extends RequestInit {
   timeout?: number
   maxResponseSize?: number
+  /**
+   * Cap on the **decompressed** response size, in bytes. Setting this opts into
+   * compression: `accept-encoding` is left for undici to negotiate (gzip/br/
+   * deflate) and the decompressed body is aborted with
+   * `SsrfError('DECOMPRESSED_TOO_LARGE')` once it exceeds this limit.
+   *
+   * When unset (the default), `accept-encoding: identity` is sent so wire bytes
+   * equal body bytes and `maxResponseSize` alone bounds memory — closing the
+   * decompression-bomb vector where a tiny gzip expands to gigabytes. Pass
+   * `Infinity` to opt into compression with no decompressed cap.
+   */
+  maxDecompressedSize?: number
 }
 
 export interface ValidatedUrl {
@@ -157,6 +175,11 @@ export function createSsrfSafeAgent(options?: ConstructorParameters<typeof Agent
  * immediately. Chunked responses are enforced by undici's Agent at the
  * HTTP-parser level — undici throws `ResponseExceededMaxSizeError` during
  * body consumption (`.text()`, `.json()`, etc.).
+ *
+ * By default `accept-encoding: identity` is sent so the server cannot ship a
+ * compressed body that expands past `maxResponseSize` (a decompression bomb).
+ * Set `maxDecompressedSize` to opt into compression with a cap on the
+ * decompressed bytes (`SsrfError('DECOMPRESSED_TOO_LARGE')` once exceeded).
  */
 export async function serverFetch(
   url: string | URL,
@@ -176,6 +199,20 @@ export async function serverFetch(
       urlString,
     )
   }
+
+  const { maxDecompressedSize } = options
+  if (
+    maxDecompressedSize !== undefined &&
+    maxDecompressedSize !== Infinity &&
+    (maxDecompressedSize <= 0 || !Number.isInteger(maxDecompressedSize))
+  ) {
+    throw new SsrfError(
+      'INVALID_OPTION',
+      'maxDecompressedSize must be a positive integer or Infinity',
+      urlString,
+    )
+  }
+
   const dispatcher =
     maxResponseSize === DEFAULT_MAX_RESPONSE_SIZE
       ? ssrfSafeAgent
@@ -184,6 +221,15 @@ export async function serverFetch(
           maxResponseSize: maxResponseSize === Infinity ? -1 : maxResponseSize,
         })
 
+  // Decompression-bomb guard: unless the caller opts into compression (by
+  // setting `maxDecompressedSize`) or sends an explicit `accept-encoding`,
+  // force `identity` so wire bytes equal body bytes and `maxResponseSize` fully
+  // bounds memory.
+  const headers = new Headers(options.headers as HeadersInit | undefined)
+  if (maxDecompressedSize === undefined && !headers.has('accept-encoding')) {
+    headers.set('accept-encoding', 'identity')
+  }
+
   const controller = new AbortController()
   const timeout = options.timeout ?? DEFAULT_TIMEOUT
   const timeoutId = setTimeout(() => controller.abort(), timeout)
@@ -191,6 +237,7 @@ export async function serverFetch(
   try {
     const response = await undiciFetch(parsed.href, {
       ...options,
+      headers,
       signal: controller.signal,
       dispatcher,
     })
@@ -208,8 +255,59 @@ export async function serverFetch(
       }
     }
 
+    if (maxDecompressedSize !== undefined && maxDecompressedSize !== Infinity && response.body) {
+      return limitDecompressedSize(response, maxDecompressedSize, urlString)
+    }
+
     return response
   } finally {
     clearTimeout(timeoutId)
   }
+}
+
+/**
+ * Wrap a response so the decompressed body is aborted once it exceeds `limit`
+ * bytes. undici has already decompressed the stream at this point, so we count
+ * the bytes the caller would actually buffer. `content-encoding`/`content-length`
+ * are stripped from the returned headers since they describe the wire body, not
+ * the (now decompressed, re-streamed) one.
+ */
+function limitDecompressedSize(
+  response: UndiciResponse,
+  limit: number,
+  url: string,
+): UndiciResponse {
+  if (!response.body) return response
+
+  let seen = 0
+  const limited = response.body.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        seen += chunk.byteLength
+        if (seen > limit) {
+          controller.error(
+            new SsrfError(
+              'DECOMPRESSED_TOO_LARGE',
+              `Decompressed response exceeds limit of ${limit} bytes`,
+              url,
+            ),
+          )
+          return
+        }
+        controller.enqueue(chunk)
+      },
+    }),
+  )
+
+  const headers = new Headers(response.headers)
+  headers.delete('content-encoding')
+  headers.delete('content-length')
+
+  const wrapped = new UndiciResponseClass(limited, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  })
+  Object.defineProperty(wrapped, 'url', { value: response.url, configurable: true })
+  return wrapped as UndiciResponse
 }

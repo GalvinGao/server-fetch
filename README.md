@@ -41,12 +41,13 @@ const res = await serverFetch('https://example.com/api', {
 
 ### Options
 
-| Option            | Type             | Default              | Description                                                                                                                                                                                                                                                                                                                    |
-| ----------------- | ---------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `timeout`         | `number` (ms)    | `10_000` (10 s)      | Aborts the request if it doesn't complete in time.                                                                                                                                                                                                                                                                             |
-| `maxResponseSize` | `number` (bytes) | `10_485_760` (10 MB) | Caps the response body size. Rejects synchronously if `Content-Length` exceeds the limit; otherwise undici throws `ResponseExceededMaxSizeError` during body consumption (`.text()`, `.json()`, …). Pass `Infinity` to disable. Must be a positive integer or `Infinity` — anything else throws `SsrfError('INVALID_OPTION')`. |
+| Option                | Type             | Default              | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| --------------------- | ---------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `timeout`             | `number` (ms)    | `10_000` (10 s)      | Aborts the request if it doesn't complete in time.                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `maxResponseSize`     | `number` (bytes) | `10_485_760` (10 MB) | Caps the response body size. Rejects synchronously if `Content-Length` exceeds the limit; otherwise undici throws `ResponseExceededMaxSizeError` during body consumption (`.text()`, `.json()`, …). Pass `Infinity` to disable. Must be a positive integer or `Infinity` — anything else throws `SsrfError('INVALID_OPTION')`.                                                                                                                                                                                    |
+| `maxDecompressedSize` | `number` (bytes) | _unset_              | Opt into compression with a cap on the **decompressed** body. When unset, `accept-encoding: identity` is sent so the wire body can't expand past `maxResponseSize` (decompression-bomb guard). When set, undici negotiates gzip/br/deflate and the decompressed stream is aborted with `SsrfError('DECOMPRESSED_TOO_LARGE')` once it exceeds this limit. Pass `Infinity` for compression with no decompressed cap. Must be a positive integer or `Infinity` — anything else throws `SsrfError('INVALID_OPTION')`. |
 
-All other `RequestInit` options except `signal` are forwarded to `undici.fetch` unchanged.
+All other `RequestInit` options except `signal` are forwarded to `undici.fetch` unchanged. By default `server-fetch` sets `accept-encoding: identity`; an explicit `accept-encoding` header you pass is respected (and then `maxResponseSize` still caps the wire body, but nothing caps decompressed size unless you also set `maxDecompressedSize`).
 
 ### Validate without fetching
 
@@ -112,7 +113,7 @@ try {
   await serverFetch(url)
 } catch (e) {
   if (e instanceof SsrfError) {
-    console.log(e.code) // INVALID_URL | BLOCKED_PROTOCOL | BLOCKED_PORT | BLOCKED_IP | DNS_FAILED | RESPONSE_TOO_LARGE | INVALID_OPTION
+    console.log(e.code) // INVALID_URL | BLOCKED_PROTOCOL | BLOCKED_PORT | BLOCKED_IP | DNS_FAILED | RESPONSE_TOO_LARGE | DECOMPRESSED_TOO_LARGE | INVALID_OPTION
     console.log(e.url) // the offending URL
   }
 }

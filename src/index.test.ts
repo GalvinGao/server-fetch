@@ -12,12 +12,15 @@ import {
 
 // Holds a one-shot override for undici fetch; null means use the real fetch.
 const mockFetchResponse = { value: null as any }
+// Captures the args of the most recent underlying fetch call.
+const lastFetchCall = { args: null as any }
 
 vi.mock('undici', async (importOriginal) => {
   const actual = await importOriginal<typeof import('undici')>()
   return {
     ...actual,
     fetch: async (...args: Parameters<typeof actual.fetch>) => {
+      lastFetchCall.args = args
       if (mockFetchResponse.value !== null) {
         const response = mockFetchResponse.value
         mockFetchResponse.value = null
@@ -30,7 +33,17 @@ vi.mock('undici', async (importOriginal) => {
 
 afterEach(() => {
   mockFetchResponse.value = null
+  lastFetchCall.args = null
 })
+
+function streamOf(...chunks: Uint8Array[]): ReadableStream<Uint8Array> {
+  return new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(chunk)
+      controller.close()
+    },
+  })
+}
 
 describe('SsrfError', () => {
   it('has code, url, and message', () => {
@@ -345,5 +358,74 @@ describe('createSsrfSafeAgent', () => {
   it('merges custom options while keeping safe lookup', () => {
     const agent = createSsrfSafeAgent({ connections: 5 })
     expect(agent).toBeInstanceOf(Agent)
+  })
+})
+
+describe('serverFetch decompression guard', () => {
+  it('sends accept-encoding: identity by default', async () => {
+    mockFetchResponse.value = { status: 200, headers: new Headers(), body: null }
+    await serverFetch('https://example.com', { timeout: 2000 })
+    const sent = new Headers(lastFetchCall.args?.[1]?.headers)
+    expect(sent.get('accept-encoding')).toBe('identity')
+  })
+
+  it('respects a caller-supplied accept-encoding header', async () => {
+    mockFetchResponse.value = { status: 200, headers: new Headers(), body: null }
+    await serverFetch('https://example.com', {
+      timeout: 2000,
+      headers: { 'accept-encoding': 'gzip' },
+    })
+    const sent = new Headers(lastFetchCall.args?.[1]?.headers)
+    expect(sent.get('accept-encoding')).toBe('gzip')
+  })
+
+  it('does not force identity when maxDecompressedSize is set (opts into compression)', async () => {
+    mockFetchResponse.value = { status: 200, headers: new Headers(), body: null }
+    await serverFetch('https://example.com', { timeout: 2000, maxDecompressedSize: 1024 })
+    const sent = new Headers(lastFetchCall.args?.[1]?.headers)
+    expect(sent.get('accept-encoding')).toBeNull()
+  })
+
+  it('aborts the body when decompressed size exceeds maxDecompressedSize', async () => {
+    mockFetchResponse.value = {
+      status: 200,
+      statusText: 'OK',
+      headers: new Headers(),
+      body: streamOf(new Uint8Array(100)),
+      url: 'https://example.com/',
+    }
+    const res = await serverFetch('https://example.com', {
+      timeout: 2000,
+      maxDecompressedSize: 10,
+    })
+    const err = await res.text().catch((e) => e)
+    const ssrf = err instanceof SsrfError ? err : err?.cause
+    expect(ssrf).toBeInstanceOf(SsrfError)
+    expect(ssrf.code).toBe('DECOMPRESSED_TOO_LARGE')
+  })
+
+  it('returns the body when decompressed size is within maxDecompressedSize', async () => {
+    mockFetchResponse.value = {
+      status: 200,
+      statusText: 'OK',
+      headers: new Headers(),
+      body: streamOf(new TextEncoder().encode('hello')),
+      url: 'https://example.com/',
+    }
+    const res = await serverFetch('https://example.com', {
+      timeout: 2000,
+      maxDecompressedSize: 100,
+    })
+    expect(await res.text()).toBe('hello')
+  })
+
+  it('rejects invalid maxDecompressedSize', async () => {
+    for (const bad of [0, -1, 1.5]) {
+      const err = await serverFetch('https://example.com', {
+        maxDecompressedSize: bad,
+      }).catch((e) => e)
+      expect(err).toBeInstanceOf(SsrfError)
+      expect(err.code).toBe('INVALID_OPTION')
+    }
   })
 })
