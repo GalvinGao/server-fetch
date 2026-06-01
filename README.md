@@ -70,6 +70,29 @@ import { createSsrfSafeAgent } from 'server-fetch'
 const agent = createSsrfSafeAgent({ connections: 10 })
 ```
 
+### Install globally
+
+Install the SSRF-safe agent as undici's global dispatcher so the global `fetch`/`request` reject hosts that resolve to private IPs at connect time:
+
+```typescript
+import { setGlobalDispatcher } from 'undici'
+import { ssrfSafeAgent } from 'server-fetch'
+
+setGlobalDispatcher(ssrfSafeAgent)
+// now the global undici fetch() rejects hosts resolving to private IPs at connect time
+```
+
+For a customized dispatcher, pass options to `createSsrfSafeAgent` (the SSRF-safe lookup is always applied):
+
+```typescript
+import { setGlobalDispatcher } from 'undici'
+import { createSsrfSafeAgent } from 'server-fetch'
+
+setGlobalDispatcher(createSsrfSafeAgent({ connections: 10 }))
+```
+
+> **Caveat:** `setGlobalDispatcher` affects undici's global `fetch`/`request`, but it does **not** add `server-fetch`'s URL-level validation — protocol/port enforcement, credential stripping, and the `Content-Length` pre-check only run inside `serverFetch()`. What the global dispatcher does provide is the connect-time IP blocklist (the anti-DNS-rebinding guarantee). Note that this blocklist only fires for hosts undici resolves via DNS — **literal-IP URLs** (e.g. `http://127.0.0.1/`) connect directly and bypass `connect.lookup`. `serverFetch()`/`validateUrl()` reject literal private IPs explicitly; the global dispatcher alone does not. Use `serverFetch()` directly when you want the full URL-level checks.
+
 ## What it blocks
 
 **Protocols:** Only `http` and `https` are allowed.

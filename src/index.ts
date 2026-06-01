@@ -65,7 +65,28 @@ function ssrfSafeLookup(
   })
 }
 
-const ssrfSafeAgent = new Agent({
+/**
+ * Module-level SSRF-safe Agent with the default `maxResponseSize`.
+ *
+ * Reused by `serverFetch()` when the caller accepts the default size, and
+ * exported so it can be installed globally via undici's `setGlobalDispatcher`:
+ *
+ * ```typescript
+ * import { setGlobalDispatcher } from 'undici'
+ * import { ssrfSafeAgent } from 'server-fetch'
+ *
+ * setGlobalDispatcher(ssrfSafeAgent)
+ * ```
+ *
+ * Installing this globally makes undici's global `fetch`/`request` reject hosts
+ * that resolve to private/reserved IPs at connect time (the anti-rebinding
+ * guarantee). The `connect.lookup` hook only fires for DNS-resolved hosts, so
+ * literal-IP URLs (e.g. `http://127.0.0.1/`) bypass it; and it does NOT add
+ * `serverFetch()`'s URL-level validation (protocol/port/credentials/
+ * Content-Length pre-check). For literal-IP rejection and the full checks,
+ * call `serverFetch()` directly.
+ */
+export const ssrfSafeAgent = new Agent({
   connect: { lookup: ssrfSafeLookup },
   maxResponseSize: DEFAULT_MAX_RESPONSE_SIZE,
 })
