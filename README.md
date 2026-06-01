@@ -41,12 +41,18 @@ const res = await serverFetch('https://example.com/api', {
 
 ### Options
 
-| Option            | Type             | Default              | Description                                                                                                                                                                                                                                                                                                                    |
-| ----------------- | ---------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `timeout`         | `number` (ms)    | `10_000` (10 s)      | Aborts the request if it doesn't complete in time.                                                                                                                                                                                                                                                                             |
-| `maxResponseSize` | `number` (bytes) | `10_485_760` (10 MB) | Caps the response body size. Rejects synchronously if `Content-Length` exceeds the limit; otherwise undici throws `ResponseExceededMaxSizeError` during body consumption (`.text()`, `.json()`, …). Pass `Infinity` to disable. Must be a positive integer or `Infinity` — anything else throws `SsrfError('INVALID_OPTION')`. |
+| Option            | Type                                      | Default              | Description                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ----------------- | ----------------------------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `timeout`         | `number` (ms)                             | `10_000` (10 s)      | Aborts the request if it doesn't complete in time.                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `maxResponseSize` | `number` (bytes)                          | `10_485_760` (10 MB) | Caps the response body size. Rejects synchronously if `Content-Length` exceeds the limit; otherwise undici throws `ResponseExceededMaxSizeError` during body consumption (`.text()`, `.json()`, …). Pass `Infinity` to disable. Must be a positive integer or `Infinity` — anything else throws `SsrfError('INVALID_OPTION')`.                                                                                                                            |
+| `maxRedirects`    | `number`                                  | `5`                  | Maximum redirect hops to follow before throwing `SsrfError('TOO_MANY_REDIRECTS')`. Must be a non-negative integer. Use `followRedirects: false` to return the 3xx instead of following.                                                                                                                                                                                                                                                                   |
+| `followRedirects` | `'same-origin' \| 'same-site' \| boolean` | `true`               | Redirect policy. `true` follows any hop that passes validation; `false` returns the 3xx response unfollowed; `'same-origin'` requires the redirect's scheme+host+port to match the original; `'same-site'` requires the same registrable domain (naive eTLD+1). Every followed hop is re-validated for scheme, port, and IP, and `Authorization`/`Cookie` are stripped on cross-origin hops (throws `SsrfError('BLOCKED_REDIRECT')` on policy violation). |
 
 All other `RequestInit` options except `signal` are forwarded to `undici.fetch` unchanged.
+
+### Redirects
+
+Redirects are followed **manually** so each hop gets the full URL validation, not just the final destination — a redirect to `http://169.254.169.254/`, an internal host, or a disallowed port is rejected mid-chain. `connect.lookup` independently re-checks the resolved IP at every connection, so DNS rebinding across hops is also covered. On a cross-origin hop the `Authorization` and `Cookie` headers are dropped (matching the fetch spec) so credentials never leak to a redirect target. Tune the chain with `maxRedirects` and `followRedirects`.
 
 ### Validate without fetching
 
@@ -112,7 +118,7 @@ try {
   await serverFetch(url)
 } catch (e) {
   if (e instanceof SsrfError) {
-    console.log(e.code) // INVALID_URL | BLOCKED_PROTOCOL | BLOCKED_PORT | BLOCKED_IP | DNS_FAILED | RESPONSE_TOO_LARGE | INVALID_OPTION
+    console.log(e.code) // INVALID_URL | BLOCKED_PROTOCOL | BLOCKED_PORT | BLOCKED_IP | DNS_FAILED | RESPONSE_TOO_LARGE | TOO_MANY_REDIRECTS | BLOCKED_REDIRECT | INVALID_OPTION
     console.log(e.url) // the offending URL
   }
 }

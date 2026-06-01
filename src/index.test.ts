@@ -12,12 +12,20 @@ import {
 
 // Holds a one-shot override for undici fetch; null means use the real fetch.
 const mockFetchResponse = { value: null as any }
+// FIFO queue of responses for multi-hop (redirect) flows; takes precedence.
+const mockFetchQueue = { responses: [] as any[] }
+// Records the args of every underlying fetch call, in order.
+const fetchCalls = { all: [] as any[] }
 
 vi.mock('undici', async (importOriginal) => {
   const actual = await importOriginal<typeof import('undici')>()
   return {
     ...actual,
     fetch: async (...args: Parameters<typeof actual.fetch>) => {
+      fetchCalls.all.push(args)
+      if (mockFetchQueue.responses.length > 0) {
+        return mockFetchQueue.responses.shift()
+      }
       if (mockFetchResponse.value !== null) {
         const response = mockFetchResponse.value
         mockFetchResponse.value = null
@@ -30,7 +38,17 @@ vi.mock('undici', async (importOriginal) => {
 
 afterEach(() => {
   mockFetchResponse.value = null
+  mockFetchQueue.responses = []
+  fetchCalls.all = []
 })
+
+function redirectResponse(status: number, location: string) {
+  return { status, statusText: '', headers: new Headers({ location }), body: null, url: '' }
+}
+
+function okResponse() {
+  return { status: 200, statusText: 'OK', headers: new Headers(), body: null }
+}
 
 describe('SsrfError', () => {
   it('has code, url, and message', () => {
@@ -345,5 +363,117 @@ describe('createSsrfSafeAgent', () => {
   it('merges custom options while keeping safe lookup', () => {
     const agent = createSsrfSafeAgent({ connections: 5 })
     expect(agent).toBeInstanceOf(Agent)
+  })
+})
+
+describe('serverFetch redirect policy', () => {
+  it('follows a redirect to a public host and returns the final response', async () => {
+    mockFetchQueue.responses = [redirectResponse(302, 'https://example.org/final'), okResponse()]
+    const res = await serverFetch('https://example.com/start', { timeout: 5000 })
+    expect(res.status).toBe(200)
+    expect(fetchCalls.all.length).toBe(2)
+    expect(fetchCalls.all[1][0]).toBe('https://example.org/final')
+  })
+
+  it('re-validates each hop and blocks a redirect to a private IP', async () => {
+    mockFetchQueue.responses = [redirectResponse(302, 'http://127.0.0.1/'), okResponse()]
+    const err = await serverFetch('https://example.com/start', { timeout: 5000 }).catch((e) => e)
+    expect(err).toBeInstanceOf(SsrfError)
+    expect(err.code).toBe('BLOCKED_IP')
+  })
+
+  it('re-validates the port on a redirect (blocks scheme/port downgrade)', async () => {
+    mockFetchQueue.responses = [redirectResponse(302, 'http://example.com:22/'), okResponse()]
+    const err = await serverFetch('https://example.com/start', { timeout: 5000 }).catch((e) => e)
+    expect(err).toBeInstanceOf(SsrfError)
+    expect(err.code).toBe('BLOCKED_PORT')
+  })
+
+  it('throws TOO_MANY_REDIRECTS past maxRedirects', async () => {
+    mockFetchQueue.responses = [
+      redirectResponse(302, 'https://example.org/a'),
+      redirectResponse(302, 'https://example.net/b'),
+      okResponse(),
+    ]
+    const err = await serverFetch('https://example.com/start', {
+      timeout: 5000,
+      maxRedirects: 1,
+    }).catch((e) => e)
+    expect(err).toBeInstanceOf(SsrfError)
+    expect(err.code).toBe('TOO_MANY_REDIRECTS')
+  })
+
+  it("blocks a cross-origin redirect under followRedirects: 'same-origin'", async () => {
+    mockFetchQueue.responses = [redirectResponse(302, 'https://example.org/x'), okResponse()]
+    const err = await serverFetch('https://example.com/start', {
+      timeout: 5000,
+      followRedirects: 'same-origin',
+    }).catch((e) => e)
+    expect(err).toBeInstanceOf(SsrfError)
+    expect(err.code).toBe('BLOCKED_REDIRECT')
+  })
+
+  it('follows a cross-origin redirect under followRedirects: true', async () => {
+    mockFetchQueue.responses = [redirectResponse(302, 'https://example.org/x'), okResponse()]
+    const res = await serverFetch('https://example.com/start', {
+      timeout: 5000,
+      followRedirects: true,
+    })
+    expect(res.status).toBe(200)
+  })
+
+  it('returns the 3xx response unfollowed under followRedirects: false', async () => {
+    mockFetchQueue.responses = [redirectResponse(302, 'https://example.org/x')]
+    const res = await serverFetch('https://example.com/start', {
+      timeout: 5000,
+      followRedirects: false,
+    })
+    expect(res.status).toBe(302)
+    expect(fetchCalls.all.length).toBe(1)
+  })
+
+  it('strips Authorization and Cookie on a cross-origin redirect', async () => {
+    mockFetchQueue.responses = [redirectResponse(302, 'https://example.org/x'), okResponse()]
+    await serverFetch('https://example.com/start', {
+      timeout: 5000,
+      headers: { authorization: 'Bearer secret', cookie: 'sid=1', 'x-keep': 'yes' },
+    })
+    const sent = new Headers(fetchCalls.all[1][1].headers)
+    expect(sent.get('authorization')).toBeNull()
+    expect(sent.get('cookie')).toBeNull()
+    expect(sent.get('x-keep')).toBe('yes')
+  })
+
+  it('keeps Authorization on a same-origin redirect', async () => {
+    mockFetchQueue.responses = [redirectResponse(302, 'https://example.com/other'), okResponse()]
+    await serverFetch('https://example.com/start', {
+      timeout: 5000,
+      headers: { authorization: 'Bearer secret' },
+    })
+    const sent = new Headers(fetchCalls.all[1][1].headers)
+    expect(sent.get('authorization')).toBe('Bearer secret')
+  })
+
+  it('downgrades to GET and drops the body on a 303', async () => {
+    mockFetchQueue.responses = [redirectResponse(303, 'https://example.com/result'), okResponse()]
+    await serverFetch('https://example.com/submit', {
+      timeout: 5000,
+      method: 'POST',
+      body: 'payload',
+      headers: { 'content-type': 'text/plain' },
+    })
+    const second = fetchCalls.all[1][1]
+    expect(second.method).toBe('GET')
+    expect(second.body).toBeUndefined()
+  })
+
+  it('rejects invalid maxRedirects', async () => {
+    for (const bad of [-1, 1.5]) {
+      const err = await serverFetch('https://example.com', {
+        maxRedirects: bad,
+      }).catch((e) => e)
+      expect(err).toBeInstanceOf(SsrfError)
+      expect(err.code).toBe('INVALID_OPTION')
+    }
   })
 })

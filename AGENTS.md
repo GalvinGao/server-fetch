@@ -48,13 +48,17 @@ The security property this library provides is: **the IP that passes validation 
 
 `maxResponseSize: Infinity` disables the limit (mapped to undici's `-1` internally). Any other non-positive-integer value must throw `SsrfError('INVALID_OPTION')`.
 
+### Redirect handling
+
+`serverFetch()` follows redirects with a **manual loop** (`redirect: 'manual'`), not undici's built-in following. undici surfaces the real 3xx response (status + readable `Location`) under manual mode, so every hop is re-run through `validateUrl()` — scheme, port, and IP — not just the final URL. `connect.lookup` still guards the IP at each connection, so rebinding across hops is covered too. `maxRedirects` (default 5) caps the chain (`TOO_MANY_REDIRECTS`); `followRedirects` (`'same-origin' | 'same-site' | true | false`) constrains targets (`BLOCKED_REDIRECT`). `Authorization`/`Cookie` are stripped on cross-origin hops, and 303 (and 301/302 on unsafe methods) downgrade to GET and drop the body. One `AbortController`/timeout bounds the whole chain. Don't replace this with undici's redirect interceptor — it can't re-validate scheme/port or enforce same-origin/same-site.
+
 ### Blocklist
 
 `src/blocklist.ts` uses `node:net` `BlockList` with 10 IPv4 + 7 IPv6 ranges. Any new range goes here with an RFC comment, and a corresponding case in `src/blocklist.test.ts`. The list covers cloud metadata (`169.254.169.254` via `169.254.0.0/16`), NAT64 prefixes, and SIIT — bypass vectors worth preserving tests for.
 
 ### Error model
 
-`SsrfError` has a string `code` and the offending `url`. Current codes: `INVALID_URL`, `BLOCKED_PROTOCOL`, `BLOCKED_PORT`, `BLOCKED_IP`, `DNS_FAILED`, `RESPONSE_TOO_LARGE`, `INVALID_OPTION`. Add new codes here and document them in `README.md`.
+`SsrfError` has a string `code` and the offending `url`. Current codes: `INVALID_URL`, `BLOCKED_PROTOCOL`, `BLOCKED_PORT`, `BLOCKED_IP`, `DNS_FAILED`, `RESPONSE_TOO_LARGE`, `TOO_MANY_REDIRECTS`, `BLOCKED_REDIRECT`, `INVALID_OPTION`. Add new codes here and document them in `README.md`.
 
 ## Project structure
 

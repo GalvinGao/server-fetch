@@ -12,6 +12,25 @@ export const { ResponseExceededMaxSizeError } = errors
 export interface ServerFetchOptions extends RequestInit {
   timeout?: number
   maxResponseSize?: number
+  /**
+   * Maximum number of redirects to follow before throwing
+   * `SsrfError('TOO_MANY_REDIRECTS')`. Defaults to 5 (matching undici). Each hop
+   * is re-validated by `validateUrl` (scheme, port, IP). Use
+   * `followRedirects: false` to return the 3xx response without following.
+   */
+  maxRedirects?: number
+  /**
+   * Redirect-following policy. Every followed hop is re-validated regardless.
+   * - `true` (default): follow anywhere that passes validation.
+   * - `false`: do not follow — return the 3xx response as-is.
+   * - `'same-origin'`: only follow redirects whose origin (scheme + host + port)
+   *   matches the original request.
+   * - `'same-site'`: only follow redirects to the same registrable domain
+   *   (naive eTLD+1; prefer `'same-origin'` for strictness).
+   *
+   * `Authorization` and `Cookie` headers are stripped on cross-origin hops.
+   */
+  followRedirects?: 'same-origin' | 'same-site' | boolean
 }
 
 export interface ValidatedUrl {
@@ -22,7 +41,19 @@ export interface ValidatedUrl {
 
 const DEFAULT_TIMEOUT = 10_000
 export const DEFAULT_MAX_RESPONSE_SIZE = 10 * 1024 * 1024
+const DEFAULT_MAX_REDIRECTS = 5
 const ALLOWED_PORTS = new Set([80, 443])
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308])
+
+/** Naive registrable domain (eTLD+1 by last two labels). */
+function registrableDomain(hostname: string): string {
+  const labels = hostname.split('.')
+  return labels.length <= 2 ? hostname : labels.slice(-2).join('.')
+}
+
+function isSameSite(a: URL, b: URL): boolean {
+  return registrableDomain(a.hostname) === registrableDomain(b.hostname)
+}
 
 /**
  * Custom DNS lookup that rejects private/reserved IPs.
@@ -157,6 +188,12 @@ export function createSsrfSafeAgent(options?: ConstructorParameters<typeof Agent
  * immediately. Chunked responses are enforced by undici's Agent at the
  * HTTP-parser level — undici throws `ResponseExceededMaxSizeError` during
  * body consumption (`.text()`, `.json()`, etc.).
+ *
+ * Redirects are followed manually (`maxRedirects`, default 5) so every hop is
+ * re-validated for scheme, port, and IP — not just the final URL.
+ * `followRedirects` constrains the allowed targets (`'same-origin'` /
+ * `'same-site'` / `true` / `false`), and `Authorization`/`Cookie` are stripped
+ * on cross-origin hops.
  */
 export async function serverFetch(
   url: string | URL,
@@ -176,6 +213,13 @@ export async function serverFetch(
       urlString,
     )
   }
+
+  const maxRedirects = options.maxRedirects ?? DEFAULT_MAX_REDIRECTS
+  if (maxRedirects < 0 || !Number.isInteger(maxRedirects)) {
+    throw new SsrfError('INVALID_OPTION', 'maxRedirects must be a non-negative integer', urlString)
+  }
+  const followRedirects = options.followRedirects ?? true
+
   const dispatcher =
     maxResponseSize === DEFAULT_MAX_RESPONSE_SIZE
       ? ssrfSafeAgent
@@ -188,27 +232,110 @@ export async function serverFetch(
   const timeout = options.timeout ?? DEFAULT_TIMEOUT
   const timeoutId = setTimeout(() => controller.abort(), timeout)
 
-  try {
-    const response = await undiciFetch(parsed.href, {
-      ...options,
-      signal: controller.signal,
-      dispatcher,
-    })
+  // Manual redirect loop: undici returns the real 3xx response under
+  // `redirect: 'manual'` (Location readable), so we re-validate every hop
+  // instead of trusting only the final URL. A single timeout/abort bounds the
+  // whole chain. `connect.lookup` still guards the IP at each connection.
+  const originalUrl = new URL(parsed.href)
+  let currentUrl = parsed.href
+  let method = (options.method ?? 'GET').toUpperCase()
+  let body = options.body
+  const headers = new Headers(options.headers as HeadersInit | undefined)
+  let redirectCount = 0
 
-    if (maxResponseSize !== Infinity) {
-      const contentLength = response.headers.get('content-length')
-      const size = Number(contentLength)
-      if (contentLength && Number.isFinite(size) && size > maxResponseSize) {
+  try {
+    while (true) {
+      const response = await undiciFetch(currentUrl, {
+        ...options,
+        method,
+        body,
+        headers,
+        redirect: 'manual',
+        signal: controller.signal,
+        dispatcher,
+      })
+
+      const location = REDIRECT_STATUSES.has(response.status)
+        ? response.headers.get('location')
+        : null
+
+      // Not a redirect we follow → this is the response to return.
+      if (!location || followRedirects === false) {
+        if (maxResponseSize !== Infinity) {
+          const contentLength = response.headers.get('content-length')
+          const size = Number(contentLength)
+          if (contentLength && Number.isFinite(size) && size > maxResponseSize) {
+            await response.body?.cancel()
+            throw new SsrfError(
+              'RESPONSE_TOO_LARGE',
+              `Response Content-Length ${contentLength} exceeds limit of ${maxResponseSize} bytes`,
+              urlString,
+            )
+          }
+        }
+        return response
+      }
+
+      if (redirectCount >= maxRedirects) {
         await response.body?.cancel()
         throw new SsrfError(
-          'RESPONSE_TOO_LARGE',
-          `Response Content-Length ${contentLength} exceeds limit of ${maxResponseSize} bytes`,
+          'TOO_MANY_REDIRECTS',
+          `Exceeded maxRedirects (${maxRedirects}) following redirects from ${urlString}`,
           urlString,
         )
       }
-    }
 
-    return response
+      let nextUrl: URL
+      try {
+        nextUrl = new URL(location, currentUrl)
+      } catch {
+        await response.body?.cancel()
+        throw new SsrfError('INVALID_URL', `Invalid redirect Location: ${location}`, currentUrl)
+      }
+
+      // Re-validate scheme, port, and IP on the next hop.
+      await validateUrl(nextUrl.href)
+
+      if (followRedirects === 'same-origin' && nextUrl.origin !== originalUrl.origin) {
+        await response.body?.cancel()
+        throw new SsrfError(
+          'BLOCKED_REDIRECT',
+          `Redirect to ${nextUrl.origin} violates same-origin policy`,
+          nextUrl.href,
+        )
+      }
+      if (followRedirects === 'same-site' && !isSameSite(originalUrl, nextUrl)) {
+        await response.body?.cancel()
+        throw new SsrfError(
+          'BLOCKED_REDIRECT',
+          `Redirect to ${nextUrl.host} violates same-site policy`,
+          nextUrl.href,
+        )
+      }
+
+      // Drop credential-bearing headers when crossing to a different origin.
+      if (nextUrl.origin !== new URL(currentUrl).origin) {
+        headers.delete('authorization')
+        headers.delete('cookie')
+      }
+
+      // 303 — and 301/302 on an unsafe method — switch to GET and drop the body.
+      if (
+        response.status === 303 ||
+        ((response.status === 301 || response.status === 302) &&
+          method !== 'GET' &&
+          method !== 'HEAD')
+      ) {
+        method = 'GET'
+        body = undefined
+        headers.delete('content-type')
+        headers.delete('content-length')
+      }
+
+      await response.body?.cancel()
+      currentUrl = nextUrl.href
+      redirectCount++
+    }
   } finally {
     clearTimeout(timeoutId)
   }
