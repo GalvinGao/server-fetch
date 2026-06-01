@@ -41,7 +41,7 @@ The security property this library provides is: **the IP that passes validation 
 
 ### Agent instances
 
-`src/index.ts` keeps a module-level `ssrfSafeAgent` with the default `maxResponseSize`. `serverFetch()` reuses it when the caller accepts the default, and only constructs a fresh `Agent` per-call when a custom `maxResponseSize` is supplied. Don't convert this to "one Agent per call" — it breaks connection pooling.
+`src/index.ts` keeps a module-level `ssrfSafeAgent` with the default `maxResponseSize`. `serverFetch()` reuses it when the caller accepts the default, and only constructs a fresh `Agent` per-call when a custom `maxResponseSize` is supplied. Don't convert this to "one Agent per call" — it breaks connection pooling. `ssrfSafeAgent` is also a public export so callers can install it via undici's `setGlobalDispatcher(ssrfSafeAgent)` (or `setGlobalDispatcher(createSsrfSafeAgent({ … }))`); this installs the connect-time IP blocklist on the global `fetch`/`request` but does NOT add the URL-level validation that only `serverFetch()` performs.
 
 ### Response size enforcement (two layers)
 
@@ -62,7 +62,7 @@ The security property this library provides is: **the IP that passes validation 
 
 ```
 src/
-  index.ts          # serverFetch, validateUrl, createSsrfSafeAgent, ssrfSafeLookup, re-exports
+  index.ts          # serverFetch, validateUrl, createSsrfSafeAgent, ssrfSafeAgent, ssrfSafeLookup, re-exports
   blocklist.ts      # node:net BlockList (IPv4 + IPv6 reserved ranges)
   error.ts          # SsrfError class
   *.test.ts         # vitest colocated tests

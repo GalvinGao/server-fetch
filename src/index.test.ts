@@ -1,12 +1,13 @@
 import dns from 'node:dns'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Agent } from 'undici'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { Agent, fetch as undiciFetch, getGlobalDispatcher, setGlobalDispatcher } from 'undici'
 import {
   DEFAULT_MAX_RESPONSE_SIZE,
   ResponseExceededMaxSizeError,
   SsrfError,
   createSsrfSafeAgent,
   serverFetch,
+  ssrfSafeAgent,
   validateUrl,
 } from './index'
 
@@ -372,5 +373,45 @@ describe('createSsrfSafeAgent', () => {
   it('merges custom options while keeping safe lookup', () => {
     const agent = createSsrfSafeAgent({ connections: 5 })
     expect(agent).toBeInstanceOf(Agent)
+  })
+})
+
+describe('ssrfSafeAgent (setGlobalDispatcher)', () => {
+  let previousDispatcher: ReturnType<typeof getGlobalDispatcher>
+
+  beforeEach(() => {
+    previousDispatcher = getGlobalDispatcher()
+  })
+
+  afterEach(() => {
+    setGlobalDispatcher(previousDispatcher)
+  })
+
+  it('is exported as an Agent instance', () => {
+    expect(ssrfSafeAgent).toBeInstanceOf(Agent)
+  })
+
+  it('blocks DNS-resolved private hosts on the global fetch when installed globally', async () => {
+    setGlobalDispatcher(ssrfSafeAgent)
+
+    // Raw undici fetch (no serverFetch URL validation): only the connect.lookup
+    // guard applies. A hostname that DNS-resolves to a private IP is rejected
+    // inside the handshake. Note: literal-IP URLs bypass connect.lookup, so the
+    // global dispatcher alone does NOT block them — serverFetch()/validateUrl()
+    // reject those explicitly.
+    const err = await undiciFetch('http://localhost/').catch((e) => e)
+
+    // undici wraps the SsrfError from connect.lookup in TypeError: fetch failed
+    expect(err.cause).toBeInstanceOf(SsrfError)
+    expect(err.cause.code).toBe('BLOCKED_IP')
+  })
+
+  it('blocks DNS-resolved private hosts when createSsrfSafeAgent is installed globally', async () => {
+    setGlobalDispatcher(createSsrfSafeAgent({ connections: 1 }))
+
+    const err = await undiciFetch('http://localhost/').catch((e) => e)
+
+    expect(err.cause).toBeInstanceOf(SsrfError)
+    expect(err.cause.code).toBe('BLOCKED_IP')
   })
 })
