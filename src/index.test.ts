@@ -12,12 +12,15 @@ import {
 
 // Holds a one-shot override for undici fetch; null means use the real fetch.
 const mockFetchResponse = { value: null as any }
+// Captures the args of the most recent underlying fetch call.
+const lastFetchCall = { args: null as any }
 
 vi.mock('undici', async (importOriginal) => {
   const actual = await importOriginal<typeof import('undici')>()
   return {
     ...actual,
     fetch: async (...args: Parameters<typeof actual.fetch>) => {
+      lastFetchCall.args = args
       if (mockFetchResponse.value !== null) {
         const response = mockFetchResponse.value
         mockFetchResponse.value = null
@@ -30,6 +33,7 @@ vi.mock('undici', async (importOriginal) => {
 
 afterEach(() => {
   mockFetchResponse.value = null
+  lastFetchCall.args = null
 })
 
 describe('SsrfError', () => {
@@ -333,6 +337,23 @@ describe('serverFetch', () => {
     }).catch((e) => e)
     expect(err).toBeInstanceOf(SsrfError)
     expect(err.code).toBe('INVALID_OPTION')
+  })
+
+  it('forwards a caller-supplied user-agent header to the underlying fetch', async () => {
+    mockFetchResponse.value = {
+      status: 200,
+      headers: new Headers(),
+      body: null,
+    }
+
+    const ua = 'my-app/1.0 (+https://my-app.example/bot; contact@my-app.example)'
+    await serverFetch('https://example.com', {
+      timeout: 2000,
+      headers: { 'user-agent': ua },
+    })
+
+    const forwardedHeaders = lastFetchCall.args?.[1]?.headers
+    expect(forwardedHeaders).toMatchObject({ 'user-agent': ua })
   })
 })
 

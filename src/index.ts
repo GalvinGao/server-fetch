@@ -157,6 +157,9 @@ export function createSsrfSafeAgent(options?: ConstructorParameters<typeof Agent
  * immediately. Chunked responses are enforced by undici's Agent at the
  * HTTP-parser level — undici throws `ResponseExceededMaxSizeError` during
  * body consumption (`.text()`, `.json()`, etc.).
+ *
+ * Set a meaningful `user-agent` header via `options.headers` to identify your
+ * app to remote operators — undici otherwise defaults it to `'node'`.
  */
 export async function serverFetch(
   url: string | URL,
