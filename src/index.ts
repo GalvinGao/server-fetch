@@ -111,6 +111,13 @@ export async function validateUrl(url: string): Promise<ValidatedUrl> {
     throw new SsrfError('INVALID_URL', 'Invalid URL', url)
   }
 
+  // Reject userinfo (e.g. `http://user:pass@host/`): kills allowlist-confusion
+  // vectors and avoids leaking credentials into logs/error messages. Keep the
+  // message generic so the password never ends up in it.
+  if (parsed.username || parsed.password) {
+    throw new SsrfError('BLOCKED_CREDENTIALS', 'URL must not contain embedded credentials', url)
+  }
+
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     throw new SsrfError('BLOCKED_PROTOCOL', `Blocked protocol: ${parsed.protocol}`, url)
   }
