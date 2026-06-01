@@ -48,6 +48,18 @@ const res = await serverFetch('https://example.com/api', {
 
 All other `RequestInit` options except `signal` are forwarded to `undici.fetch` unchanged.
 
+### Setting a User-Agent
+
+undici defaults the `User-Agent` header to `'node'`, which tells the remote operator nothing about who is calling and is frequently rate-limited or blocked outright. Set a semantic one through the standard `headers` option:
+
+```typescript
+const res = await serverFetch('https://api.example.com/data', {
+  headers: { 'user-agent': 'my-app/1.0 (+https://my-app.example/bot; contact@my-app.example)' },
+})
+```
+
+A good `User-Agent` identifies your application and version, and includes a contact URL and/or email so the remote operator can reach you if your requests cause problems.
+
 ### Validate without fetching
 
 For registration-time checks (e.g., saving a webhook URL):
