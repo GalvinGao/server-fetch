@@ -49,21 +49,21 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@j178/prek": "^0.4.3",
+    "@j178/prek": "^0.5.0",
     "@types/node": "^25.6.0",
-    "@vitest/coverage-v8": "^4.1.7",
-    "oxfmt": "0.52.0",
-    "oxlint": "1.67.0",
-    "tsdown": "^0.22.0",
+    "@vitest/coverage-v8": "^4.1.11",
+    "oxfmt": "0.65.0",
+    "oxlint": "1.80.0",
+    "tsdown": "^0.22.14",
     "typescript": "6.0.3",
-    "undici": "^8.3.0",
-    "vitest": "^4.1.7"
+    "undici": "^8.10.1",
+    "vitest": "^4.1.11"
   },
   "peerDependencies": {
-    "undici": "^8.3.0"
+    "undici": "^8.10.1"
   },
   "engines": {
     "node": ">=20.20.2"
   },
-  "packageManager": "pnpm@10.33.4+sha512.1c67b3b359b2d408119ba1ed289f34b8fc3c6873412bec6fd264fbdc82489e510fcbecb9ce9d22dae7f3b76269d8441046014bdca53b9979cd7a561ad631b800"
+  "packageManager": "pnpm@10.34.5"
 }
